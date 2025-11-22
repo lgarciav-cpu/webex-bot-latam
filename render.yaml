@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: webex-bot-latam
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn bot:app"
+    plan: free
