@@ -124,7 +124,7 @@ def scheduler():
 
         time.sleep(60)
 
-@app.route("/", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
 
@@ -157,5 +157,6 @@ def webhook():
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
     app.run(port=5000)
+
 
 
