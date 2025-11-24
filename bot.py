@@ -71,8 +71,11 @@ def leer_excel():
 def parsear_hora(h):
     try:
         txt = str(h).replace("a. m.", "AM").replace("p. m.", "PM")
-        return parser.parse(txt)
+        hora = parser.parse(txt)
+        print("Hora leída del Excel:", hora)
+        return hora
     except:
+        print("Error parseando hora:", h)
         return None
 
 def revisar_y_enviar_mensajes():
@@ -80,23 +83,32 @@ def revisar_y_enviar_mensajes():
     if not filas:
         return
 
+    # Hora actual del servidor (UTC) convertida a Perú (UTC-5)
     ahora = datetime.utcnow() - timedelta(hours=5)
     fecha_hoy = ahora.date()
+
+    print("Hora local (ajustada):", ahora)
 
     for row in filas:
         if not row["Fecha"]:
             continue
         
         fecha = row["Fecha"]
-        hora = parsear_hora(row["Hora"])
+        hora = parsear_hora(row["Hora"])   # Esto detecta 10:36 a.m., etc.
+
+        if hora:
+            # Convertir hora del Excel también a UTC-5
+            hora = hora.replace(year=ahora.year, month=ahora.month, day=ahora.day)
+
         room = row["RoomID"]
         mensaje = row["Mensaje"]
 
+        # Coincidencia exacta dentro de 60 segundos
         if fecha == fecha_hoy and hora:
             diferencia = abs((hora - ahora).total_seconds())
             if diferencia <= 60:
-                gif = random.choice(GIFS_HOLA)
-                send_gif(room, gif)
+                print(f"✔ Enviando mensaje programado a {room}: {mensaje}")
+                send_gif(room)
                 send_message(room, mensaje)
 
 def scheduler():
@@ -157,6 +169,7 @@ def webhook():
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
     app.run(port=5000)
+
 
 
 
