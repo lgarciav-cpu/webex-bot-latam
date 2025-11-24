@@ -1,14 +1,14 @@
 from flask import Flask, request
 import requests
 import random
-import pandas as pd
+import openpyxl
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 import time
 from dateutil import parser
 
-WEBEX_BOT_TOKEN = "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"  # <-- pon tu token aquí
+WEBEX_TOKEN = "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"  # <-- pon tu token aquí
 WEBEX_API = "https://webexapis.com/v1/messages"
 EXCEL_URL = "https://docs.google.com/spreadsheets/d/1sWFXSOY0jZ8PaSh2Lg1lnmCBGN96fLkC/export?format=xlsx"
 
@@ -31,61 +31,129 @@ GIFS_HOLA = [
 ]
 
 def send_message(room_id, text):
-    headers = {"Authorization": f"Bearer {WEBEX_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
+        "Content-Type": "application/json"
+    }
     data = {"roomId": room_id, "text": text}
     requests.post(WEBEX_API, headers=headers, json=data)
 
-def send_gif(room_id):
-    gif = random.choice(GIFS_HOLA)
-    headers = {"Authorization": f"Bearer {WEBEX_TOKEN}"}
-    data = {"roomId": room_id, "files": [gif]}
+
+def send_gif(room_id, gif_url):
+    headers = {
+        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {"roomId": room_id, "files": [gif_url]}
     requests.post(WEBEX_API, headers=headers, json=data)
 
 def leer_excel():
     try:
-        df = pd.read_excel(EXCEL_URL)
-        return df
+        contenido = requests.get(EXCEL_URL).content
+        wb = openpyxl.load_workbook(BytesIO(contenido), data_only=True)
+        ws = wb.active
+
+        datos = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            fecha, hora, roomid, mensaje = row
+            datos.append({
+                "Fecha": fecha,
+                "Hora": hora,
+                "RoomID": roomid,
+                "Mensaje": mensaje
+            })
+        return datos
+
     except Exception as e:
         print("Error leyendo Excel:", e)
-        return None
+        return []
 
-def parse_hora(valor):
+def parsear_hora(h):
     try:
-        txt = str(valor).replace("a. m.", "AM").replace("p. m.", "PM")
+        txt = str(h).replace("a. m.", "AM").replace("p. m.", "PM")
         return parser.parse(txt)
     except:
         return None
 
-def ejecutar_scheduler():
-    while True:
-        df = leer_excel()
-        if df is None:
-            time.sleep(60)
+def revisar_y_enviar_mensajes():
+    filas = leer_excel()
+    if not filas:
+        return
+
+    ahora = datetime.now()
+    fecha_hoy = ahora.date()
+
+    for row in filas:
+        if not row["Fecha"]:
             continue
         
+        fecha = row["Fecha"]
+        hora = parsear_hora(row["Hora"])
+        room = row["RoomID"]
+        mensaje = row["Mensaje"]
+
+        if fecha == fecha_hoy and hora:
+            diferencia = abs((hora - ahora).total_seconds())
+            if diferencia <= 60:
+                gif = random.choice(GIFS_HOLA)
+                send_gif(room, gif)
+                send_message(room, mensaje)
+
+def scheduler():
+    while True:
+        filas = leer_excel()
+        hoy = datetime.now().date()
         ahora = datetime.now()
-        fecha_hoy = ahora.date()
 
-        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.date
-        df["Hora_dt"] = df["Hora"].apply(parse_hora)
-
-        hoy = df[df["Fecha"] == fecha_hoy]
-
-        for _, row in hoy.iterrows():
-            hora_msg = row["Hora_dt"]
-            if hora_msg is None:
+        for row in filas:
+            if not row["Fecha"]:
                 continue
 
-            diferencia = abs((hora_msg - ahora).total_seconds())
-            if diferencia <= 60:  # exacto a 1 minuto
-                room = str(row["RoomID"])
-                mensaje = str(row["Mensaje"])
+            fecha = row["Fecha"]
+            hora = parsear_hora(row["Hora"])
+            room = row["RoomID"]
+            mensaje = row["Mensaje"]
 
-                print(f"✔ Enviando mensaje programado a {room}: {mensaje}")
-                send_gif(room)
-                send_message(room, mensaje)
+            if fecha == hoy and hora:
+                diferencia = abs((hora - ahora).total_seconds())
+                if diferencia <= 60:
+                    print(f" Enviando mensaje programado a {room}")
+                    gif = random.choice(GIFS_HOLA)
+                    send_gif(room, gif)
+                    send_message(room, mensaje)
 
         time.sleep(60)
 
+@app.route("/", methods=["POST"])
+def webhook():
+    data = request.json
+
+    if "data" not in data:
+        return "ok", 200
+
+    msg_id = data["data"]["id"]
+    headers = {"Authorization": f"Bearer {WEBEX_BOT_TOKEN}"}
+
+    msg = requests.get(f"https://webexapis.com/v1/messages/{msg_id}", headers=headers).json()
+
+    texto = msg.get("text", "").lower()
+    room = msg.get("roomId")
+    sender = msg.get("personEmail")
+
+    if sender.endswith("@webex.bot"):
+        return "ok", 200
+
+    if "hola" in texto:
+        gif = random.choice(GIFS_HOLA)
+        send_gif(room, gif)
+        send_message(room, "👋 ¡Hola! ¿Qué tal?")
+    elif "ayuda" in texto:
+        send_message(room, "Puedo saludar y también enviar recordatorios desde Excel.")
+    else:
+        send_message(room, "No entendí 😅. Escribe *hola* o *ayuda*.")
+
+    return "ok", 200
+
 if __name__ == "__main__":
     ejecutar_scheduler()
+
