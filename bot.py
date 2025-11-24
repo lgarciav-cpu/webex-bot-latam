@@ -9,9 +9,10 @@ import time
 from dateutil import parser
 
 WEBEX_BOT_TOKEN = "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"  # <-- pon tu token aquí
+WEBEX_API = "https://webexapis.com/v1/messages"
+EXCEL_URL = "https://docs.google.com/spreadsheets/d/1sWFXSOY0jZ8PaSh2Lg1lnmCBGN96fLkC/export?format=xlsx"
 
 app = Flask(__name__)
-WEBEX_API = "https://webexapis.com/v1/messages"
 
 GIFS_HOLA = [
     "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWwzZmpsNG81ODc2YnFmM2x6ZXpmMGFsdzJ2eWo1c2owcTM5NWhrNiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/ASd0Ukj0y3qMM/giphy.gif",
@@ -29,146 +30,62 @@ GIFS_HOLA = [
     "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3YXdzeWJiMG4wOHZ0d3NuczdpOXk0ODM5M2lrcHp3eDQxOXo2N3NpYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MEFVcuRIoVETUMYZEe/giphy.gif"
 ]
 
-EXCEL_URL = "https://docs.google.com/spreadsheets/d/1sWFXSOY0jZ8PaSh2Lg1lnmCBGN96fLkC/export?format=xlsx"
+def send_message(room_id, text):
+    headers = {"Authorization": f"Bearer {WEBEX_TOKEN}"}
+    data = {"roomId": room_id, "text": text}
+    requests.post(WEBEX_API, headers=headers, json=data)
+
+def send_gif(room_id):
+    gif = random.choice(GIFS_HOLA)
+    headers = {"Authorization": f"Bearer {WEBEX_TOKEN}"}
+    data = {"roomId": room_id, "files": [gif]}
+    requests.post(WEBEX_API, headers=headers, json=data)
 
 def leer_excel():
     try:
         df = pd.read_excel(EXCEL_URL)
-        print("Google Sheet leído correctamente.")
         return df
     except Exception as e:
-        print("Error leyendo Google Sheet:", e)
-        return pd.DataFrame()
+        print("Error leyendo Excel:", e)
+        return None
 
-def parse_hora_excel(valor):
+def parse_hora(valor):
     try:
-        # reemplazar formatos latinos
-        txt = str(valor).replace("a. m.", "AM").replace("p. m.", "PM").strip()
-        dt = parser.parse(txt)
-        return dt
+        txt = str(valor).replace("a. m.", "AM").replace("p. m.", "PM")
+        return parser.parse(txt)
     except:
         return None
 
-def revisar_y_enviar_mensajes():
-    try:
+def ejecutar_scheduler():
+    while True:
         df = leer_excel()
-
-        if df.empty:
-            print("Excel vacío o no accesible.")
-            return
-
+        if df is None:
+            time.sleep(60)
+            continue
+        
         ahora = datetime.now()
         fecha_hoy = ahora.date()
 
-        print(f"Fecha hoy: {fecha_hoy}")
-        print(f"Ahora: {ahora}")
-
-        # Normalizar columnas
         df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.date
-        df["Hora_datetime"] = df["Hora"].apply(parse_hora_excel)
+        df["Hora_dt"] = df["Hora"].apply(parse_hora)
 
-        filas = df[df["Fecha"] == fecha_hoy]
+        hoy = df[df["Fecha"] == fecha_hoy]
 
-        print(filas[["Fecha","Hora","Hora_datetime","RoomID"]])
-
-        for _, row in filas.iterrows():
-            hora_dt = row["Hora_datetime"]
-
-            if hora_dt is None:
+        for _, row in hoy.iterrows():
+            hora_msg = row["Hora_dt"]
+            if hora_msg is None:
                 continue
 
-            if abs((hora_dt - ahora).total_seconds()) <= 60:
-                room_id = str(row["RoomID"]).strip()
-                mensaje = str(row["Mensaje"]).strip()
+            diferencia = abs((hora_msg - ahora).total_seconds())
+            if diferencia <= 60:  # exacto a 1 minuto
+                room = str(row["RoomID"])
+                mensaje = str(row["Mensaje"])
 
-                print(f"Enviando mensaje programado a {room_id}: {mensaje}")
+                print(f"✔ Enviando mensaje programado a {room}: {mensaje}")
+                send_gif(room)
+                send_message(room, mensaje)
 
-                gif = buscar_gif_hola()
-                send_gif(room_id, gif)
-                send_message(room_id, mensaje)
-
-    except Exception as e:
-        print("Error en revisar_y_enviar_mensajes:", e)
-
-def scheduler():
-    while True:
-        revisar_y_enviar_mensajes()
-        time.sleep(60)  # revisa cada 1 minuto
-
-def buscar_gif_hola():
-    return random.choice(GIFS_HOLA)
-
-def send_message(room_id, text):
-    headers = {
-        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {"roomId": room_id, "text": text}
-    requests.post(WEBEX_API, headers=headers, json=data)
-
-def send_gif(room_id, gif_url):
-    headers = {
-        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "roomId": room_id,
-        "files": [gif_url]
-    }
-    requests.post(WEBEX_API, headers=headers, json=data)
-
-@app.route("/", methods=["POST"])
-def webhook():
-    data = request.json
-
-    # Validación ultra segura
-    if not data or "data" not in data:
-        return "ok", 200
-
-    message_id = data["data"].get("id")
-    if not message_id:
-        return "ok", 200
-
-    # obtener detalles del mensaje
-    headers = {"Authorization": f"Bearer {WEBEX_BOT_TOKEN}"}
-    msg_data = requests.get(f"https://webexapis.com/v1/messages/{message_id}", headers=headers).json()
-
-    text = msg_data.get("text")
-    room_id = msg_data.get("roomId")
-    sender = msg_data.get("personEmail")
-
-    # Si no hay room o sender, no hacemos nada
-    if not room_id or not sender:
-        return "ok", 200
-
-    # evitar que el bot se responda a sí mismo
-    if sender.endswith("@webex.bot"):
-        return "ok", 200
-
-    # si no hay texto (GIF, sticker, archivo), responder algo opcional
-    if not isinstance(text, str):
-        send_message(room_id, "📎 Recibí tu mensaje, pero no tenía texto.")
-        return "ok", 200
-    
-    text = text.lower()
-
-    # respuestas básicas
-    if "hola" in text:
-        gif = buscar_gif_hola()
-        print("GIF seleccionado:", gif)   # <--- DEBUG
-        if gif:
-            send_gif(room_id, gif)
-        send_message(room_id, "👋 ¡Hola! ¿Qué tal?")
-    elif "ayuda" in text:
-        send_message(room_id, "Puedo saludar y pronto aprenderé recordatorios 🔔")
-    else:
-        send_message(room_id, "No entendí 😅. Escribe **hola** o **ayuda**.")
-
-    return "ok", 200
+        time.sleep(60)
 
 if __name__ == "__main__":
-    # Hilo paralelo que revisa el Excel cada minuto
-    threading.Thread(target=scheduler, daemon=True).start()
-
-    # Webhook activo
-    app.run(port=5000)
+    ejecutar_scheduler()
