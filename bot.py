@@ -32,7 +32,7 @@ GIFS_HOLA = [
 
 def send_message(room_id, text):
     headers = {
-        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
+        "Authorization": f"Bearer {WEBEX_TOKEN}",
         "Content-Type": "application/json"
     }
     data = {"roomId": room_id, "text": text}
@@ -41,7 +41,7 @@ def send_message(room_id, text):
 
 def send_gif(room_id, gif_url):
     headers = {
-        "Authorization": f"Bearer {WEBEX_BOT_TOKEN}",
+        "Authorization": f"Bearer {WEBEX_TOKEN}",
         "Content-Type": "application/json"
     }
     data = {"roomId": room_id, "files": [gif_url]}
@@ -132,7 +132,7 @@ def webhook():
         return "ok", 200
 
     msg_id = data["data"]["id"]
-    headers = {"Authorization": f"Bearer {WEBEX_BOT_TOKEN}"}
+    headers = {"Authorization": f"Bearer {WEBEX_TOKEN}"}
 
     msg = requests.get(f"https://webexapis.com/v1/messages/{msg_id}", headers=headers).json()
 
@@ -155,5 +155,7 @@ def webhook():
     return "ok", 200
 
 if __name__ == "__main__":
-    ejecutar_scheduler()
+    threading.Thread(target=scheduler, daemon=True).start()
+    app.run(port=5000)
+
 
