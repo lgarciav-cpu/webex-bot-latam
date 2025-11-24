@@ -80,7 +80,7 @@ def revisar_y_enviar_mensajes():
     if not filas:
         return
 
-    ahora = datetime.now()
+    ahora = datetime.utcnow() - timedelta(hours=5)
     fecha_hoy = ahora.date()
 
     for row in filas:
@@ -157,6 +157,7 @@ def webhook():
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
     app.run(port=5000)
+
 
 
 
