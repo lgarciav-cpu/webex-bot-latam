@@ -176,10 +176,21 @@ def webhook():
         print("Error webhook:", e)
 
     return "ok", 200
+_scheduler_started = False
 
+def start_scheduler_once():
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True
+    threading.Thread(target=scheduler, daemon=True).start()
+    print("✅ Scheduler thread started")
+
+start_scheduler_once()
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
