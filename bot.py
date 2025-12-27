@@ -117,8 +117,8 @@ def scheduler():
                     continue
 
                 # Ventana de disparo ±60s
-                diff = abs((dt_prog - ahora).total_seconds())
-                if diff <= 180:
+                diff = (ahora - dt_prog).total_seconds()
+                if 0 <= diff <= 600:
                     key = (dt_prog.date().isoformat(), dt_prog.strftime("%H:%M"), row["RoomID"], row["Mensaje"])
                     if key in SENT_CACHE:
                         continue
@@ -190,6 +190,7 @@ start_scheduler_once()
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
