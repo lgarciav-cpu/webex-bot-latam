@@ -261,10 +261,16 @@ def webhook():
         elif any(w in texto for w in ["ayuda", "help"]):
             send_message(room, "Puedo enviar mensajes desde tu Excel, y también puedes hacerme preguntas sobre nuestros documentos en PDF.")
         else:
-            # === AQUÍ ENTRA LA IA ===
-            send_message(room, "Buscando en mis archivos... 🧠") # Mensaje temporal para que el usuario no se desespere
-            respuesta_ia = consultar_ia_con_rag(raw_text) # Le pasamos el texto original (no el .lower()) para mejor contexto
-            send_message(room, respuesta_ia)
+            # === AQUÍ ENTRA LA IA (CORREGIDO PARA EVITAR TIMEOUT) ===
+            send_message(room, "Buscando en mis archivos... 🧠")
+            
+            # Creamos una mini-tarea en segundo plano para que el servidor no se congele
+            def pensar_y_responder():
+                respuesta_ia = consultar_ia_con_rag(raw_text)
+                send_message(room, respuesta_ia)
+                
+            # Disparamos la tarea sin quedarnos esperando
+            threading.Thread(target=pensar_y_responder).start()
 
     except Exception as e:
         print("Error webhook:", e)
@@ -287,6 +293,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
