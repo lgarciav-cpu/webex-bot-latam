@@ -8,7 +8,12 @@ from datetime import datetime, timedelta, time as dtime
 import threading
 import time
 from zoneinfo import ZoneInfo  # Python 3.9+
+import glob
 
+# --- NUEVAS LIBRERÍAS DE IA ---
+import google.generativeai as genai
+import chromadb
+import PyPDF2
 # =========================
 # CONFIG
 # =========================
@@ -278,6 +283,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
