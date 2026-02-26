@@ -5,8 +5,8 @@ openpyxl==3.1.5
 gunicorn
 python-dateutil
 google-generativeai
-chromadb
 PyPDF2
+
 
 
 
