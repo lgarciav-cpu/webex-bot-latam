@@ -82,7 +82,8 @@ def consultar_ia_con_rag(pregunta):
         respuesta = model.generate_content(prompt)
         return respuesta.text
     except Exception as e:
-        return "Corto circuito 🤖💥"
+        # ¡Hacemos que el bot confiese el error en el chat!
+        return f"Corto circuito 🤖💥. Google dice: {str(e)}""
 
 # ==========================================
 # FUNCIONES DE WEBEX Y EXCEL (Tus originales)
@@ -260,6 +261,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
