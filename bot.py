@@ -38,84 +38,52 @@ GIFS_HOLA = [
 # Para evitar enviar el mismo anuncio 60 veces
 SENT_CACHE = set()  # guarda tuplas (date, hh:mm, room, msg)
 # ==========================================
-# CONFIGURACIÓN DE IA Y LECTURA DE PDFS
+# CONFIGURACIÓN DE IA Y LECTURA LIGERA (SIN CHROMA)
 # ==========================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-# Usamos el modelo gratuito y rápido de Google
 model = genai.GenerativeModel('gemini-1.5-flash') if GEMINI_API_KEY else None
 
-# Iniciar la Base de Datos Vectorial para los PDFs
-chroma_client = chromadb.Client()
-collection = chroma_client.get_or_create_collection(name="memoria_pdfs")
+# Memoria ultra ligera (texto plano)
+memoria_texto = ""
 
 def cargar_pdfs_en_memoria():
-    """Lee la carpeta 'pdfs', extrae el texto y lo guarda en ChromaDB."""
+    global memoria_texto
     archivos_pdf = glob.glob("pdfs/*.pdf")
     if not archivos_pdf:
-        print("No se encontraron PDFs en la carpeta 'pdfs'.")
+        print("No hay PDFs.")
         return
-
-    print(f"Procesando {len(archivos_pdf)} archivos PDF...")
+        
     for ruta in archivos_pdf:
-        texto_completo = ""
         try:
             with open(ruta, "rb") as f:
                 lector = PyPDF2.PdfReader(f)
                 for pagina in lector.pages:
-                    texto_extraido = pagina.extract_text()
-                    if texto_extraido:
-                        texto_completo += texto_extraido + " "
-            
-            # Cortar el texto en fragmentos (chunks) de 1000 caracteres
-            fragmentos = [texto_completo[i:i+1000] for i in range(0, len(texto_completo), 1000)]
-            
-            # Guardar en la base de datos
-            for i, fragmento in enumerate(fragmentos):
-                doc_id = f"{os.path.basename(ruta)}_frag_{i}"
-                collection.add(
-                    documents=[fragmento],
-                    metadatas=[{"origen": ruta}],
-                    ids=[doc_id]
-                )
+                    texto = pagina.extract_text()
+                    if texto:
+                        memoria_texto += texto + "\n"
         except Exception as e:
-            print(f"Error leyendo {ruta}: {e}")
-            
-    print("✅ PDFs cargados y listos en la memoria vectorial.")
+            print(f"Error: {e}")
+    print("✅ PDFs cargados en modo ultra ligero.")
 
-# Ejecutar la carga de PDFs al arrancar el bot
 cargar_pdfs_en_memoria()
 
 def consultar_ia_con_rag(pregunta):
-    """Busca en los PDFs y le pregunta a Gemini."""
     if not model:
-        return "Lo siento, mi cerebro de IA no está conectado (Falta GEMINI_API_KEY)."
+        return "IA desconectada."
 
-    # 1. Buscar los 3 fragmentos de PDF más relevantes a la pregunta
-    resultados = collection.query(query_texts=[pregunta], n_results=3)
-    
-    contexto = ""
-    if resultados and resultados['documents'] and resultados['documents'][0]:
-        contexto = "\n".join(resultados['documents'][0])
-
-    # 2. Instrucciones para Gemini
     prompt = f"""
-    Eres un asistente corporativo amable. Responde a la pregunta del usuario utilizando la siguiente información de contexto extraída de nuestros documentos.
-    Si la respuesta no está en el contexto, puedes usar tu conocimiento general, pero aclara que no está en los documentos oficiales.
+    Eres un asistente corporativo. Responde usando esta información de nuestros documentos:
+    {memoria_texto}
     
-    DOCUMENTOS DE CONTEXTO:
-    {contexto}
-    
-    PREGUNTA DEL USUARIO: {pregunta}
+    PREGUNTA: {pregunta}
     """
-    
     try:
         respuesta = model.generate_content(prompt)
         return respuesta.text
     except Exception as e:
-        print("Error en Gemini:", e)
-        return "Hubo un corto circuito en mi cerebro procesando tu consulta. 🤖💥"
+        return "Corto circuito 🤖💥"
 
 # ==========================================
 # FUNCIONES DE WEBEX Y EXCEL (Tus originales)
@@ -293,6 +261,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
