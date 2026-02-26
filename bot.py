@@ -186,41 +186,6 @@ def scheduler():
         time.sleep(30)  # revisa cada 30s (mejor que 60 para no perder ventana)
 
 # ==========================================
-# EL "CEREBRO" QUE PIENSA EN SEGUNDO PLANO
-# ==========================================
-def procesar_mensaje_en_fondo(msg_id):
-    """
-    Esta función se ejecuta de forma paralela. Webex ya no tiene que esperarla.
-    """
-    try:
-        msg = requests.get(f"https://webexapis.com/v1/messages/{msg_id}", headers=_headers(), timeout=15).json()
-        raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
-        texto = raw_text.lower()
-        room = msg.get("roomId")
-        sender = msg.get("personEmail", "")
-
-        # Ignorar mensajes de otros bots (¡y los suyos propios!)
-        if sender.endswith("@webex.bot"):
-            return
-
-        # Lógica de respuesta
-        if any(w in texto for w in ["hola", "hello", "hi", "buenas"]):
-            gif = random.choice(GIFS_HOLA)
-            send_gif(room, gif)
-            send_message(room, "👋 ¡Hola! ¿Qué tal? Pregúntame lo que necesites.")
-            
-        elif any(w in texto for w in ["ayuda", "help"]):
-            send_message(room, "Puedo enviar mensajes desde tu Excel, y también puedes hacerme preguntas sobre nuestros documentos en PDF.")
-            
-        else:
-            send_message(room, "Buscando en mis archivos... 🧠")
-            respuesta_ia = consultar_ia_con_rag(raw_text)
-            send_message(room, respuesta_ia)
-
-    except Exception as e:
-        print("Error procesando en el hilo de fondo:", e)
-
-# ==========================================
 # WEBHOOK DE WEBEX
 # ==========================================
 @app.route("/webhook", methods=["POST"])
@@ -283,6 +248,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
