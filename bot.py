@@ -223,29 +223,32 @@ def webhook():
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
+        # Ignorar mensajes de otros bots
         if sender.endswith("@webex.bot"):
             return "ok", 200
+
+        print(f"📩 Mensaje de {sender}: '{raw_text}'")
 
         if any(w in texto for w in ["hola", "hello", "hi", "buenas"]):
             gif = random.choice(GIFS_HOLA)
             send_gif(room, gif)
             send_message(room, "👋 ¡Hola! ¿Qué tal? Pregúntame lo que necesites.")
         elif any(w in texto for w in ["ayuda", "help"]):
-            send_message(room, "Puedo enviar mensajes desde tu Excel, y también puedes hacerme preguntas sobre nuestros documentos en PDF.")
+            send_message(room, "Puedo enviar mensajes desde tu Excel, y también hacerme preguntas sobre nuestros PDFs.")
         else:
-            send_message(room, "Buscando en mis archivos... 🧠")
+            send_message(room, "Buscando en mis archivos con Llama 3... 🦙🧠")
             
+            # Respondemos en segundo plano
             def pensar_y_responder():
-                respuesta_ia = consultar_ia_con_rag(raw_text)
+                respuesta_ia = consultar_ia_con_llama(raw_text)
                 send_message(room, respuesta_ia)
                 
             threading.Thread(target=pensar_y_responder).start()
 
     except Exception as e:
-        print("Error webhook:", e)
+        print("❌ Error webhook:", e)
 
     return "ok", 200
-
 # ==========================================
 # INICIO DE SERVIDOR Y TAREAS
 # ==========================================
@@ -266,6 +269,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
