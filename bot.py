@@ -44,16 +44,13 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash') if GEMINI_API_KEY else None
 
-# Memoria ultra ligera (texto plano)
-memoria_texto = ""
+def consultar_ia_con_rag(pregunta):
+    if not model:
+        return "IA desconectada."
 
-def cargar_pdfs_en_memoria():
-    global memoria_texto
+    # El bot lee el PDF a la velocidad de la luz SOLAMENTE cuando le preguntas algo
+    memoria_texto = ""
     archivos_pdf = glob.glob("pdfs/*.pdf")
-    if not archivos_pdf:
-        print("No hay PDFs.")
-        return
-        
     for ruta in archivos_pdf:
         try:
             with open(ruta, "rb") as f:
@@ -63,14 +60,7 @@ def cargar_pdfs_en_memoria():
                     if texto:
                         memoria_texto += texto + "\n"
         except Exception as e:
-            print(f"Error: {e}")
-    print("✅ PDFs cargados en modo ultra ligero.")
-
-cargar_pdfs_en_memoria()
-
-def consultar_ia_con_rag(pregunta):
-    if not model:
-        return "IA desconectada."
+            pass
 
     prompt = f"""
     Eres un asistente corporativo. Responde usando esta información de nuestros documentos:
@@ -82,7 +72,6 @@ def consultar_ia_con_rag(pregunta):
         respuesta = model.generate_content(prompt)
         return respuesta.text
     except Exception as e:
-        # ¡Hacemos que el bot confiese el error en el chat!
         return f"Corto circuito 🤖💥. Google dice: {str(e)}"
 
 # ==========================================
@@ -261,6 +250,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
