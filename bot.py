@@ -185,6 +185,9 @@ def scheduler():
 
         time.sleep(30)  # revisa cada 30s (mejor que 60 para no perder ventana)
 
+# ==========================================
+# WEBHOOK DE WEBEX
+# ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json or {}
@@ -197,20 +200,14 @@ def webhook():
 
     try:
         msg = requests.get(f"https://webexapis.com/v1/messages/{msg_id}", headers=_headers(), timeout=15).json()
-
-        # A veces viene más útil en markdown
         raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
         texto = raw_text.lower()
-
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
-        # Evitar responder a bots
         if sender.endswith("@webex.bot"):
             return "ok", 200
 
-        # Soporta saludos ES/EN
-        # LÓGICA DE RESPUESTA
         if any(w in texto for w in ["hola", "hello", "hi", "buenas"]):
             gif = random.choice(GIFS_HOLA)
             send_gif(room, gif)
@@ -218,21 +215,22 @@ def webhook():
         elif any(w in texto for w in ["ayuda", "help"]):
             send_message(room, "Puedo enviar mensajes desde tu Excel, y también puedes hacerme preguntas sobre nuestros documentos en PDF.")
         else:
-            # === AQUÍ ENTRA LA IA (CORREGIDO PARA EVITAR TIMEOUT) ===
             send_message(room, "Buscando en mis archivos... 🧠")
             
-            # Creamos una mini-tarea en segundo plano para que el servidor no se congele
             def pensar_y_responder():
                 respuesta_ia = consultar_ia_con_rag(raw_text)
                 send_message(room, respuesta_ia)
                 
-            # Disparamos la tarea sin quedarnos esperando
             threading.Thread(target=pensar_y_responder).start()
 
     except Exception as e:
         print("Error webhook:", e)
 
     return "ok", 200
+
+# ==========================================
+# INICIO DE SERVIDOR Y TAREAS
+# ==========================================
 _scheduler_started = False
 
 def start_scheduler_once():
@@ -250,6 +248,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
