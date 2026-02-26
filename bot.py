@@ -37,18 +37,15 @@ GIFS_HOLA = [
 # Para evitar enviar el mismo anuncio 60 veces
 SENT_CACHE = set()  # guarda tuplas (date, hh:mm, room, msg)
 # ==========================================
-# CONFIGURACIÓN DE IA Y LECTURA LIGERA (SIN CHROMA)
+# CONFIGURACIÓN DE IA: LLAMA 3 (Vía Groq)
 # ==========================================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash') if GEMINI_API_KEY else None
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
-def consultar_ia_con_rag(pregunta):
-    if not model:
-        return "IA desconectada."
+def consultar_ia_con_llama(pregunta):
+    if not GROQ_API_KEY:
+        return "IA desconectada. Falta la llave de Groq."
 
-    # El bot lee el PDF a la velocidad de la luz SOLAMENTE cuando le preguntas algo
+    print("🧠 IA: Leyendo PDFs...")
     memoria_texto = ""
     archivos_pdf = glob.glob("pdfs/*.pdf")
     for ruta in archivos_pdf:
@@ -62,17 +59,38 @@ def consultar_ia_con_rag(pregunta):
         except Exception as e:
             pass
 
-    prompt = f"""
-    Eres un asistente corporativo. Responde usando esta información de nuestros documentos:
-    {memoria_texto}
+    # Usamos la API REST de Groq directamente
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
     
-    PREGUNTA: {pregunta}
-    """
+    payload = {
+        "model": "llama-3.3-70b-versatile", # El modelo más avanzado de Llama 3
+        "messages": [
+            {
+                "role": "system", 
+                "content": f"Eres un asistente corporativo de la empresa. Usa SOLO esta información para responder, si no lo sabes, di que no está en el manual:\n\n{memoria_texto}"
+            },
+            {
+                "role": "user", 
+                "content": pregunta
+            }
+        ],
+        "temperature": 0.3
+    }
+
     try:
-        respuesta = model.generate_content(prompt)
-        return respuesta.text
+        print("🧠 IA: Consultando a Llama 3...")
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        print("🧠 IA: ¡Respuesta lista!")
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"Corto circuito 🤖💥. Google dice: {str(e)}"
+        print(f"❌ Error de IA: {str(e)}")
+        return "Lo siento, tuve un problema procesando el texto. Por favor, intenta de nuevo."
 
 # ==========================================
 # FUNCIONES DE WEBEX Y EXCEL (Tus originales)
@@ -248,6 +266,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
