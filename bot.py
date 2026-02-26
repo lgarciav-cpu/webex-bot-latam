@@ -42,7 +42,7 @@ SENT_CACHE = set()  # guarda tuplas (date, hh:mm, room, msg)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') if GEMINI_API_KEY else None
+model = genai.GenerativeModel('gemini-pro') if GEMINI_API_KEY else None
 
 # Memoria ultra ligera (texto plano)
 memoria_texto = ""
@@ -261,6 +261,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
