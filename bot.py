@@ -262,13 +262,16 @@ def start_scheduler_once():
     threading.Thread(target=scheduler, daemon=True).start()
     print("✅ Scheduler thread started")
 
-start_scheduler_once()
 @app.route("/ping", methods=["GET"])
 def ping():
     return "ok", 200
 
 if __name__ == "__main__":
+    # ¡Movimos el inicio del scheduler aquí adentro!
+    start_scheduler_once()
+    # Ahora sí, encendemos el servidor de Render
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
