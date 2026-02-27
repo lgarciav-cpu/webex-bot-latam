@@ -267,10 +267,10 @@ def ping():
     return "ok", 200
 
 if __name__ == "__main__":
-    # ¡Movimos el inicio del scheduler aquí adentro!
+    # ¡AQUÍ ADENTRO DEBE IR ESTA LÍNEA!
     start_scheduler_once()
-    # Ahora sí, encendemos el servidor de Render
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
