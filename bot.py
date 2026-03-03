@@ -223,8 +223,9 @@ def webhook():
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
-        # Ignorar mensajes de otros bots
-        if sender.endswith("@webex.bot"):
+        # 🛑 EL CANDADO ANTI-BUCLES 🛑
+        # Si no hay remitente, o si el mensaje está vacío, o si es un bot: ¡IGNORAR AL INSTANTE!
+        if not sender or not raw_text or sender.endswith("@webex.bot"):
             return "ok", 200
 
         print(f"📩 Mensaje de {sender}: '{raw_text}'")
@@ -270,6 +271,7 @@ if __name__ == "__main__":
     # ¡AQUÍ ADENTRO DEBE IR ESTA LÍNEA!
     start_scheduler_once()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+
 
 
 
