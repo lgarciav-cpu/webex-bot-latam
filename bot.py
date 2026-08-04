@@ -213,18 +213,20 @@ def extraer_datos_webinar(texto_mensaje: str):
 # CONEXIÓN CON CIRCUIT API
 # ==========================================
 def generar_invitacion_circuit(titulo, fecha_str, web_link):
-    """Genera el borrador de la invitación usando la AppKey directa de Circuit."""
-    APP_KEY = os.environ.get("CIRCUIT_APP_KEY", "egai-prd-operations-108332990-newcontent-1785865382247")
-    CIRCUIT_URL = os.environ.get("CIRCUIT_API_URL", "https://circuit.cisco.com/api/v1/chat/completions")
+    """Genera el borrador de la invitación con logs detallados de depuración."""
+    APP_KEY = os.environ.get("CIRCUIT_APP_KEY", "egai-prd-operations-108332990-newcontent-1785865382247").strip()
+    CIRCUIT_URL = os.environ.get("CIRCUIT_API_URL", "https://circuit.cisco.com/api/v1/chat/completions").strip()
 
+    # Enviamos tanto "appkey" como "api-key" para asegurar compatibilidad
     headers = {
         "Content-Type": "application/json",
-        "appkey": APP_KEY
+        "appkey": APP_KEY,
+        "api-key": APP_KEY
     }
 
     prompt = f"""
     Actúa como especialista en comunicación interna de Cisco.
-    Redacta una invitación formal y atractiva en formato Markdown para un correo.
+    Redacta una invitación formal y atractiva en formato Markdown.
     
     Datos del evento:
     - Título: {titulo}
@@ -247,15 +249,19 @@ def generar_invitacion_circuit(titulo, fecha_str, web_link):
     }
 
     try:
-        response = requests.post(CIRCUIT_URL, json=payload, headers=headers, timeout=30)
+        print(f"🔍 [CIRCUIT DEBUG] Enviando petición a: {CIRCUIT_URL}")
+        response = requests.post(CIRCUIT_URL, json=payload, headers=headers, timeout=15)
+        
+        print(f"🔍 [CIRCUIT DEBUG] Código HTTP recibido: {response.status_code}")
+        print(f"🔍 [CIRCUIT DEBUG] Respuesta del servidor: {response.text}")
+
         if response.status_code == 200:
             resultado = response.json()
             return resultado['choices'][0]['message']['content']
         else:
-            print(f"❌ Error Circuit API ({response.status_code}): {response.text}")
             return None
     except Exception as e:
-        print(f"❌ Excepción en Circuit API: {e}")
+        print(f"❌ [CIRCUIT DEBUG] Error de conexión: {e}")
         return None
 
 # ==========================================
