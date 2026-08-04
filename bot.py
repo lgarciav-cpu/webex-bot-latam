@@ -76,7 +76,7 @@ def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emai
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "scheduledType": "webinar",  # Si tu cuenta no tiene módulo de webinar, cambia a 'scheduledMeeting'
+        "scheduledType": "scheduledMeeting",  # Si tu cuenta no tiene módulo de webinar, cambia a 'scheduledMeeting'
         "hostEmail": host_email,     # 👈 AQUÍ se asigna la cuenta de Diego o quien lo pida
         "invitees": [{"email": email} for email in panelistas_emails]
     }
@@ -144,36 +144,27 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    # ... (código previo) ...
-    
-    try:
-        # ...
-        raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
-        texto_lower = raw_text.lower()
-        room = msg.get("roomId")
-        sender = msg.get("personEmail", "")
+    data = request.json or {}
+    if "data" not in data:
+        return "ok", 200
 
-        # 👇 TODO ESTO DEBE LLEVAR TABULACIÓN (ESTAR DENTRO DE WEBHOOK)
-        if texto_lower in ["hola", "menu", "menú", "opciones"]:
-            mostrar_menu_principal(room)
-            
-        elif texto_lower == "1":
-            mostrar_instrucciones_opcion_1(room)
+    # ... obtención de mensaje y sender ...
 
-        elif "crear webinar" in texto_lower:
-            threading.Thread(
-                target=procesar_creacion_webinar, 
-                args=(room, raw_text, sender)
-            ).start()
+    # ⚠️ TODO ESTO DEBE ESTAR INDENTADO (CON TABULACIÓN) DENTRO DE WEBHOOK
+    if texto_lower in ["hola", "menu", "menú", "opciones"]:
+        mostrar_menu_principal(room)
+        
+    elif texto_lower == "1":
+        mostrar_instrucciones_opcion_1(room)
 
-        elif texto_lower == "2":
-            send_message(room, "Opción 2")
+    elif "crear webinar" in texto_lower:
+        threading.Thread(
+            target=procesar_creacion_webinar, 
+            args=(room, raw_text, sender)
+        ).start()
 
-        else:
-            send_message(room, "Escribe menu para ver opciones")
-
-    except Exception as e:
-        print("Error:", e)
+    else:
+        send_message(room, "Escribe 'menu' para ver las opciones disponibles.")
 
     return "ok", 200
 
