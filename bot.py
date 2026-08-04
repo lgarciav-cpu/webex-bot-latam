@@ -46,22 +46,42 @@ def send_message(room_id: str, text: str):
         print(f"❌ Error al enviar mensaje: {e}")
 
 def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
-    """Usa tu token de usuario para agendar la reunión en tu cuenta de Cisco."""
+    """
+    Envía un payload estándar a Webex Meetings y captura el detalle real del error.
+    """
+    # 1. Convertir fecha a UTC y calcular hora de fin
+    fecha_utc = fecha_inicio_dt.astimezone(timezone.utc)
+    fecha_fin_utc = fecha_utc + timedelta(minutes=duracion_minutos)
+
+    start_iso = fecha_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_iso = fecha_fin_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # 2. Payload minimalista y 100% compatible con Webex REST API
     payload = {
         "title": titulo,
-        "start": fecha_inicio_dt.isoformat(),
-        "durationMinutes": duracion_minutos,
-        "scheduledType": "scheduledMeeting",
-        "invitees": [{"email": email} for email in panelistas_emails if email]
+        "start": start_iso,
+        "end": end_iso
     }
+
+    if panelistas_emails:
+        payload["invitees"] = [{"email": email} for email in panelistas_emails if email]
+
     try:
-        # ⚠️ AQUÍ USAMOS get_user_headers()
         response = requests.post(WEBEX_API_MEETINGS, headers=get_user_headers(), json=payload, timeout=20)
+        
         if response.status_code in (200, 201):
             return True, response.json()
         else:
-            print(f"❌ Error API Webex ({response.status_code}): {response.text}")
-            return False, response.json().get("message", f"Error HTTP {response.status_code}")
+            err_json = response.json()
+            print(f"❌ Respuesta de Webex ({response.status_code}): {err_json}")
+            
+            # Extraer el detalle real dentro del arreglo 'errors'
+            mensaje_error = err_json.get("message", f"Error HTTP {response.status_code}")
+            if "errors" in err_json and isinstance(err_json["errors"], list) and len(err_json["errors"]) > 0:
+                mensaje_error = err_json["errors"][0].get("description", mensaje_error)
+                
+            return False, mensaje_error
+
     except Exception as e:
         return False, str(e)
 
