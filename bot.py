@@ -148,39 +148,54 @@ def webhook():
     if "data" not in data:
         return "ok", 200
 
-    # ... obtención de mensaje y sender ...
+    msg_id = data["data"].get("id")
+    if not msg_id:
+        return "ok", 200
 
-    # ⚠️ TODO ESTO DEBE ESTAR INDENTADO (CON TABULACIÓN) DENTRO DE WEBHOOK
-    if texto_lower in ["hola", "menu", "menú", "opciones"]:
-        mostrar_menu_principal(room)
-        
-    elif texto_lower == "1":
-        mostrar_instrucciones_opcion_1(room)
+    try:
+        res = requests.get(f"{WEBEX_API_MESSAGES}/{msg_id}", headers=get_webex_headers(), timeout=15)
+        if res.status_code != 200:
+            return "ok", 200
+            
+        msg = res.json()
+        raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
+        texto_lower = raw_text.lower()
+        room = msg.get("roomId")
+        sender = msg.get("personEmail", "")
 
-    elif "crear webinar" in texto_lower:
-        threading.Thread(
-            target=procesar_creacion_webinar, 
-            args=(room, raw_text, sender)
-        ).start()
+        if not sender or not raw_text or sender.endswith("@webex.bot"):
+            return "ok", 200
 
-    else:
-        send_message(room, "Escribe 'menu' para ver las opciones disponibles.")
+        print(f"📩 [{sender}]: {raw_text}")
+
+        if texto_lower in ["hola", "menu", "menú", "opciones", "start", "ayuda"]:
+            mostrar_menu_principal(room)
+            
+        elif texto_lower == "1":
+            mostrar_instrucciones_opcion_1(room)
+
+        elif "crear webinar" in texto_lower:
+            threading.Thread(
+                target=procesar_creacion_webinar, 
+                args=(room, raw_text, sender)
+            ).start()
+
+        else:
+            send_message(room, "Escribe 'menu' para ver las opciones disponibles.")
+
+    except Exception as e:
+        print("❌ Error general en Webhook:", e)
 
     return "ok", 200
 
-@app.route("/ping", methods=["GET"])
 
+@app.route("/ping", methods=["GET"])
 def ping():
     return "Servidor activo", 200
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
-elif "crear webinar" in texto_lower:
-    # Le pasamos sender a la función para que sepa quién es el Host
-    threading.Thread(
-        target=procesar_creacion_webinar, 
-        args=(room, raw_text, sender)
-    ).start()
 
 
 
