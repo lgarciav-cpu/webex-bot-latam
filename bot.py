@@ -68,17 +68,17 @@ def mostrar_instrucciones_opcion_1(room_id):
 # ==========================================
 # LÓGICA DE WEBINARS EN WEBEX
 # ==========================================
-def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails, host_email):
+def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
     """
-    Crea una sesión asignando como anfitrión (Host) al usuario que la solicitó.
+    Al usar tu Personal Access Token, la sesión se crea automáticamente 
+    a tu nombre, por lo que NO incluimos 'hostEmail'.
     """
     payload = {
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "scheduledType": "scheduledMeeting",  # Si tu cuenta no tiene módulo de webinar, cambia a 'scheduledMeeting'
-        "hostEmail": host_email,     # 👈 AQUÍ se asigna la cuenta de Diego o quien lo pida
-        "invitees": [{"email": email} for email in panelistas_emails]
+        "scheduledType": "scheduledMeeting",  # Cambia a 'webinar' si tienes la licencia habilitada
+        "invitees": [{"email": email} for email in panelistas_emails if email]
     }
     
     try:
@@ -91,8 +91,8 @@ def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emai
     except Exception as e:
         return False, str(e)
 
+
 def procesar_creacion_webinar(room_id, raw_text, sender_email):
-    """Parsea el texto y crea el webinar con sender_email como Host."""
     try:
         partes = [p.strip() for p in raw_text.split(";") if p.strip()]
         titulo = None
@@ -117,16 +117,14 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
             send_message(room_id, "⚠️ **Faltan datos requeridos.** Incluye Título y Fecha.")
             return
 
-        send_message(room_id, f"⏳ Creando sesión **'{titulo}'** a nombre de **{sender_email}**...")
+        send_message(room_id, f"⏳ Creando sesión **'{titulo}'**...")
         
-        # Le pasamos sender_email como anfitrión
-        exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas, sender_email)
+        exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas)
         
         if exito:
             web_link = resultado.get("webLink", "No disponible")
             msg_exito = (
                 f"✅ **¡Sesión Creada Exitosamente!**\n\n"
-                f"👤 **Anfitrión:** {sender_email}\n"
                 f"📌 **Título:** {titulo}\n"
                 f"📅 **Fecha/Hora:** {fecha_inicio.strftime('%Y-%m-%d %H:%M')}\n"
                 f"⏱️ **Duración:** {duracion} min\n"
@@ -139,8 +137,10 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
     except Exception as e:
         print(f"Error procesando parser: {e}")
         send_message(room_id, "❌ Error procesando el texto. Revisa el formato.")
+
+
 # ==========================================
-# WEBHOOK ENDPOINT
+# WEBHOOK CONTROLADOR (FILTRO ANTI-BUCLE)
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -163,7 +163,11 @@ def webhook():
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
+        # 🛑 FILTRO ANTI-BUCLE: Ignorar si el mensaje viene del bot o es una respuesta automática del sistema
         if not sender or not raw_text or sender.endswith("@webex.bot"):
+            return "ok", 200
+            
+        if any(raw_text.startswith(pref) for pref in ["Escribe 'menu'", "⏳ Creando", "❌ Error", "✅ ¡Sesión"]):
             return "ok", 200
 
         print(f"📩 [{sender}]: {raw_text}")
@@ -180,22 +184,17 @@ def webhook():
                 args=(room, raw_text, sender)
             ).start()
 
+        elif texto_lower == "2":
+            send_message(room, "ℹ️ Opción 2 aún no disponible.")
+
+        # Si el usuario escribe algo no reconocido, enviamos el menú sin peligro de bucle
         else:
-            send_message(room, "Escribe 'menu' para ver las opciones disponibles.")
+            send_message(room, "❓ Comando no reconocido. Escribe **menu** para ver las opciones.")
 
     except Exception as e:
         print("❌ Error general en Webhook:", e)
 
     return "ok", 200
-
-
-@app.route("/ping", methods=["GET"])
-def ping():
-    return "Servidor activo", 200
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
 
 
 
