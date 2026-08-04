@@ -134,6 +134,13 @@ def procesar_creacion_webinar(room_id, raw_text):
 # ==========================================
 # FUNCIONES DE MENÚ E INSTRUCCIONES
 # ==========================================
+import re
+from datetime import datetime
+from flask import Flask, request, jsonify
+
+# ==========================================
+# FUNCIONES AUXILIARES DE MENÚ
+# ==========================================
 def mostrar_menu_principal(room_id):
     menu_texto = (
         "🤖 **¡Hola! Bienvenido al Bot de Gestión de Webex**\n\n"
@@ -160,8 +167,50 @@ def mostrar_instrucciones_opcion_1(room_id):
     )
     send_message(room_id, instrucciones)
 
+
+def extraer_datos_webinar(texto_mensaje: str):
+    """Parsea el texto del usuario extraendo titulo, fecha, duracion y panelistas."""
+    lineas = re.split(r'[\n;]+', texto_mensaje)
+    
+    datos = {}
+    for linea in lineas:
+        if ":" in linea:
+            clave, valor = linea.split(":", 1)
+            clave_clean = clave.strip().lower().replace("í", "i").replace("ó", "o")
+            datos[clave_clean] = valor.strip()
+
+    titulo = datos.get("titulo")
+    fecha_raw = datos.get("fecha")
+    duracion_raw = datos.get("duracion", "30")
+    panelistas_raw = datos.get("panelistas", "")
+
+    if not titulo:
+        return False, "❌ Falta el campo **Título:** en el mensaje."
+    if not fecha_raw:
+        return False, "❌ Falta el campo **Fecha:** en el mensaje."
+
+    try:
+        fecha_dt = datetime.strptime(fecha_raw, "%Y-%m-%d %H:%M")
+        fecha_dt = fecha_dt.replace(tzinfo=TZ)
+    except ValueError:
+        return False, f"❌ Formato de fecha inválido (`{fecha_raw}`). Usa: `YYYY-MM-DD HH:MM` (Ejemplo: `2026-08-04 15:00`)."
+
+    try:
+        duracion = int(re.sub(r'\D', '', duracion_raw))
+    except ValueError:
+        duracion = 30
+
+    panelistas = [e.strip() for e in re.split(r'[,;\s]+', panelistas_raw) if "@" in e]
+
+    return True, {
+        "titulo": titulo,
+        "fecha_dt": fecha_dt,
+        "duracion": duracion,
+        "panelistas": panelistas
+    }
+
 # ==========================================
-# WEBHOOK ENDPOINT
+# ENDPOINT DE WEBHOOK
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -174,7 +223,8 @@ def webhook():
         return "ok", 200
 
     try:
-        res = requests.get(f"{WEBEX_API_MESSAGES}/{msg_id}", headers=get_webex_headers(), timeout=15)
+        # 1. Obtener el contenido del mensaje desde Webex
+        res = requests.get(f"{WEBEX_API_MESSAGES}/{msg_id}", headers=get_bot_headers(), timeout=15)
         if res.status_code != 200:
             return "ok", 200
             
@@ -184,18 +234,41 @@ def webhook():
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
-        # Evitar responder a sí mismo o a bots
+        # 2. Ignorar mensajes propios o de otros bots
         if not sender or not raw_text or sender.endswith("@webex.bot"):
             return "ok", 200
 
         print(f"📩 [{sender}]: {raw_text}")
 
+        # 3. Evaluar el mensaje del usuario
         if texto_lower in ["hola", "menu", "menú", "opciones", "start", "ayuda"]:
             mostrar_menu_principal(room)
+            
         elif texto_lower == "1":
             mostrar_instrucciones_opcion_1(room)
+            
         elif "crear webinar" in texto_lower:
-            threading.Thread(target=procesar_creacion_webinar, args=(room, raw_text)).start()
+            exito, resultado = extraer_datos_webinar(raw_text)
+            
+            if not exito:
+                send_message(room, resultado)
+            else:
+                datos = resultado
+                send_message(room, f"⌛ Creando sesión **'{datos['titulo']}'**...")
+                
+                creado, res_api = crear_webinar_api(
+                    titulo=datos["titulo"],
+                    fecha_inicio_dt=datos["fecha_dt"],
+                    duracion_minutos=datos["duracion"],
+                    panelistas_emails=datos["panelistas"]
+                )
+                
+                if creado:
+                    web_link = res_api.get("webLink", "No disponible")
+                    send_message(room, f"✅ **¡Sesión creada con éxito!**\n\n📌 **Título:** {datos['titulo']}\n🔗 **Enlace:** {web_link}")
+                else:
+                    send_message(room, f"❌ **Error al crear:** {res_api}")
+                    
         else:
             send_message(room, "❓ Comando no reconocido. Escribe **menu** para ver las opciones.")
 
