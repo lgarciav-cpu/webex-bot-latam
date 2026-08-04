@@ -213,56 +213,32 @@ def extraer_datos_webinar(texto_mensaje: str):
 # CONEXIÓN CON CIRCUIT API
 # ==========================================
 def generar_invitacion_circuit(titulo, fecha_str, web_link):
-    """Genera el borrador de la invitación con logs detallados de depuración."""
+    """Genera la invitación y devuelve (borrador, error_detalle)."""
     APP_KEY = os.environ.get("CIRCUIT_APP_KEY", "egai-prd-operations-108332990-newcontent-1785865382247").strip()
     CIRCUIT_URL = os.environ.get("CIRCUIT_API_URL", "https://circuit.cisco.com/api/v1/chat/completions").strip()
 
-    # Enviamos tanto "appkey" como "api-key" para asegurar compatibilidad
     headers = {
         "Content-Type": "application/json",
         "appkey": APP_KEY,
         "api-key": APP_KEY
     }
 
-    prompt = f"""
-    Actúa como especialista en comunicación interna de Cisco.
-    Redacta una invitación formal y atractiva en formato Markdown.
-    
-    Datos del evento:
-    - Título: {titulo}
-    - Fecha y Hora: {fecha_str}
-    - Enlace de Webex: {web_link}
-    
-    Estructura requerida:
-    - Asunto llamativo con emoji.
-    - Saludo corporativo de Cisco.
-    - Puntos clave sobre lo que aprenderán.
-    - Enlace directo a Webex ({web_link}).
-    - Cierre profesional.
-    """
+    prompt = f"Redacta una invitación formal para el webinar '{titulo}' a realizarse el {fecha_str}. Enlace: {web_link}"
 
     payload = {
         "agent_id": "bd2530eb-3aeb-4ffc-a6ac-fb748eeb1638",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
+        "messages": [{"role": "user", "content": prompt}]
     }
 
     try:
-        print(f"🔍 [CIRCUIT DEBUG] Enviando petición a: {CIRCUIT_URL}")
         response = requests.post(CIRCUIT_URL, json=payload, headers=headers, timeout=15)
-        
-        print(f"🔍 [CIRCUIT DEBUG] Código HTTP recibido: {response.status_code}")
-        print(f"🔍 [CIRCUIT DEBUG] Respuesta del servidor: {response.text}")
-
         if response.status_code == 200:
-            resultado = response.json()
-            return resultado['choices'][0]['message']['content']
+            res_json = response.json()
+            return res_json['choices'][0]['message']['content'], None
         else:
-            return None
+            return None, f"HTTP {response.status_code}: {response.text[:200]}"
     except Exception as e:
-        print(f"❌ [CIRCUIT DEBUG] Error de conexión: {e}")
-        return None
+        return None, str(e)
 
 # ==========================================
 # ENDPOINT DE WEBHOOK
@@ -325,19 +301,22 @@ def webhook():
                     # 1. Enviar mensaje de confirmación de Webex
                     send_message(room, f"✅ **¡Sesión creada con éxito!**\n\n📌 **Título:** {datos['titulo']}\n🔗 **Enlace:** {web_link}\n\n🤖 *Generando borrador de invitación con Circuit AI...*")
                     
-                    # 2. Generar la invitación usando Circuit API
-                    borrador = generar_invitacion_circuit(
+                    # 2. Generar la invitación usando Circuit API (captura de error)
+                    borrador, error_circuit = generar_invitacion_circuit(
                         titulo=datos["titulo"],
                         fecha_str=fecha_formateada,
                         web_link=web_link
                     )
                     
-                    # 3. Responder con el correo redactado si Circuit respondió con éxito
+                    # 3. Responder según el resultado
                     if borrador:
                         send_message(room, f"📧 **Borrador de Correo Generado por Circuit:**\n\n{borrador}")
                     else:
-                        send_message(room, "⚠️ La sesión se creó, pero no se pudo generar el borrador automático con Circuit.")
+                        send_message(room, f"⚠️ **Detalle del fallo de Circuit AI:**\n`{error_circuit}`")
                     
+                else:
+                    send_message(room, f"❌ **Error al crear sesión en Webex:** {res_api}")
+
         else:
             send_message(room, "❓ Comando no reconocido. Escribe **menu** para ver las opciones.")
 
