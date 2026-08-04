@@ -210,6 +210,55 @@ def extraer_datos_webinar(texto_mensaje: str):
     }
 
 # ==========================================
+# CONEXIÓN CON CIRCUIT API
+# ==========================================
+def generar_invitacion_circuit(titulo, fecha_str, web_link):
+    """Genera el borrador de la invitación usando la AppKey directa de Circuit."""
+    APP_KEY = os.environ.get("CIRCUIT_APP_KEY", "egai-prd-operations-108332990-newcontent-1785865382247")
+    CIRCUIT_URL = os.environ.get("CIRCUIT_API_URL", "https://circuit.cisco.com/api/v1/chat/completions")
+
+    headers = {
+        "Content-Type": "application/json",
+        "appkey": APP_KEY
+    }
+
+    prompt = f"""
+    Actúa como especialista en comunicación interna de Cisco.
+    Redacta una invitación formal y atractiva en formato Markdown para un correo.
+    
+    Datos del evento:
+    - Título: {titulo}
+    - Fecha y Hora: {fecha_str}
+    - Enlace de Webex: {web_link}
+    
+    Estructura requerida:
+    - Asunto llamativo con emoji.
+    - Saludo corporativo de Cisco.
+    - Puntos clave sobre lo que aprenderán.
+    - Enlace directo a Webex ({web_link}).
+    - Cierre profesional.
+    """
+
+    payload = {
+        "agent_id": "bd2530eb-3aeb-4ffc-a6ac-fb748eeb1638",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    try:
+        response = requests.post(CIRCUIT_URL, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            resultado = response.json()
+            return resultado['choices'][0]['message']['content']
+        else:
+            print(f"❌ Error Circuit API ({response.status_code}): {response.text}")
+            return None
+    except Exception as e:
+        print(f"❌ Excepción en Circuit API: {e}")
+        return None
+
+# ==========================================
 # ENDPOINT DE WEBHOOK
 # ==========================================
 @app.route("/webhook", methods=["POST"])
@@ -265,9 +314,23 @@ def webhook():
                 
                 if creado:
                     web_link = res_api.get("webLink", "No disponible")
-                    send_message(room, f"✅ **¡Sesión creada con éxito!**\n\n📌 **Título:** {datos['titulo']}\n🔗 **Enlace:** {web_link}")
-                else:
-                    send_message(room, f"❌ **Error al crear:** {res_api}")
+                    fecha_formateada = datos['fecha_dt'].strftime('%Y-%m-%d %H:%M')
+                    
+                    # 1. Enviar mensaje de confirmación de Webex
+                    send_message(room, f"✅ **¡Sesión creada con éxito!**\n\n📌 **Título:** {datos['titulo']}\n🔗 **Enlace:** {web_link}\n\n🤖 *Generando borrador de invitación con Circuit AI...*")
+                    
+                    # 2. Generar la invitación usando Circuit API
+                    borrador = generar_invitacion_circuit(
+                        titulo=datos["titulo"],
+                        fecha_str=fecha_formateada,
+                        web_link=web_link
+                    )
+                    
+                    # 3. Responder con el correo redactado si Circuit respondió con éxito
+                    if borrador:
+                        send_message(room, f"📧 **Borrador de Correo Generado por Circuit:**\n\n{borrador}")
+                    else:
+                        send_message(room, "⚠️ La sesión se creó, pero no se pudo generar el borrador automático con Circuit.")
                     
         else:
             send_message(room, "❓ Comando no reconocido. Escribe **menu** para ver las opciones.")
