@@ -8,55 +8,42 @@ from zoneinfo import ZoneInfo
 # =========================
 # CONFIGURACIÓN GENERAL
 # =========================
-WEBEX_TOKEN = "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"
+WEBEX_TOKEN = os.environ.get("WEBEX_TOKEN", "").strip()            # Token del BOT (Hablar)
+WEBEX_USER_TOKEN = os.environ.get("WEBEX_USER_TOKEN", "").strip()  # Tu Token Personal (Agendar)
+
 WEBEX_API_MESSAGES = "https://webexapis.com/v1/messages"
 WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"
 
 TZ = ZoneInfo("America/Lima")
 app = Flask(__name__)
 
-def get_webex_headers():
+def get_bot_headers():
+    """Headers con el token del BOT para enviar mensajes al chat."""
     if not WEBEX_TOKEN:
-        raise RuntimeError("Falta WEBEX_TOKEN en las variables de entorno.")
+        raise RuntimeError("Falta WEBEX_TOKEN (Bot) en variables de entorno.")
     return {
         "Authorization": f"Bearer {WEBEX_TOKEN}",
         "Content-Type": "application/json"
     }
 
+def get_user_headers():
+    """Headers con tu TOKEN PERSONAL para agendar reuniones."""
+    token = WEBEX_USER_TOKEN if WEBEX_USER_TOKEN else WEBEX_TOKEN
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
 def send_message(room_id: str, text: str):
-    """Envía un mensaje de texto plano o markdown a Webex."""
+    """Usa el token del Bot para responder en el chat."""
     data = {"roomId": room_id, "markdown": text}
     try:
-        requests.post(WEBEX_API_MESSAGES, headers=get_webex_headers(), json=data, timeout=15)
+        requests.post(WEBEX_API_MESSAGES, headers=get_bot_headers(), json=data, timeout=15)
     except Exception as e:
         print(f"❌ Error al enviar mensaje: {e}")
 
-def mostrar_menu_principal(room_id):
-    menu_texto = (
-        "🤖 **¡Hola! Bienvenido al Bot de Gestión de Webex**\n\n"
-        "Selecciona una de las siguientes opciones:\n\n"
-        "1️⃣ **Crear Webinar / Sesión Webex**\n"
-        "2️⃣ **Próximamente: Consultas**\n"
-        "3️⃣ **Próximamente: Reportes**\n\n"
-        "💡 *Escribe 1 o el comando para crear la sesión.*"
-    )
-    send_message(room_id, menu_texto)
-
-def mostrar_instrucciones_opcion_1(room_id):
-    instrucciones = (
-        "📌 **OPCIÓN 1: Crear Webinar / Sesión**\n\n"
-        "Envía la información con este formato exacto:\n\n"
-        "```text\n"
-        "crear webinar;\n"
-        "Título: Lanzamiento de Producto 2026;\n"
-        "Fecha: 2026-08-15 15:00;\n"
-        "Duración: 60;\n"
-        "Panelistas: juan@empresa.com, maria@empresa.com\n"
-        "```"
-    )
-    send_message(room_id, instrucciones)
-
 def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
+    """Usa tu token de usuario para agendar la reunión en tu cuenta de Cisco."""
     payload = {
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
@@ -65,10 +52,12 @@ def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emai
         "invitees": [{"email": email} for email in panelistas_emails if email]
     }
     try:
-        response = requests.post(WEBEX_API_MEETINGS, headers=get_webex_headers(), json=payload, timeout=20)
+        # ⚠️ AQUÍ USAMOS get_user_headers()
+        response = requests.post(WEBEX_API_MEETINGS, headers=get_user_headers(), json=payload, timeout=20)
         if response.status_code in (200, 201):
             return True, response.json()
         else:
+            print(f"❌ Error API Webex ({response.status_code}): {response.text}")
             return False, response.json().get("message", f"Error HTTP {response.status_code}")
     except Exception as e:
         return False, str(e)
