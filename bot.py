@@ -144,53 +144,36 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.json or {}
-    if "data" not in data:
-        return "ok", 200
-
-    msg_id = data["data"].get("id")
-    if not msg_id:
-        return "ok", 200
-
+    # ... (código previo) ...
+    
     try:
-        # Obtener contenido del mensaje desde Webex
-        res = requests.get(f"{WEBEX_API_MESSAGES}/{msg_id}", headers=get_webex_headers(), timeout=15)
-        if res.status_code != 200:
-            return "ok", 200
-            
-        msg = res.json()
+        # ...
         raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
         texto_lower = raw_text.lower()
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
-        # Ignorar mensajes de bots o vacíos
-        if not sender or not raw_text or sender.endswith("@webex.bot"):
-            return "ok", 200
-
-        print(f"📩 [{sender}]: {raw_text}")
-
-        # Routing por Menú u Opciones
-        if texto_lower in ["hola", "menu", "menú", "opciones", "start", "ayuda"]:
+        # 👇 TODO ESTO DEBE LLEVAR TABULACIÓN (ESTAR DENTRO DE WEBHOOK)
+        if texto_lower in ["hola", "menu", "menú", "opciones"]:
             mostrar_menu_principal(room)
             
         elif texto_lower == "1":
             mostrar_instrucciones_opcion_1(room)
 
         elif "crear webinar" in texto_lower:
-            threading.Thread(target=procesar_creacion_webinar, args=(room, raw_text)).start()
+            threading.Thread(
+                target=procesar_creacion_webinar, 
+                args=(room, raw_text, sender)
+            ).start()
 
         elif texto_lower == "2":
-            send_message(room, "ℹ️ La **Opción 2** aún no está configurada.")
-
-        elif texto_lower == "3":
-            send_message(room, "ℹ️ La **Opción 3** aún no está configurada.")
+            send_message(room, "Opción 2")
 
         else:
-            send_message(room, "❓ Opción no reconocida. Escribe **menu** para ver las opciones disponibles.")
+            send_message(room, "Escribe menu para ver opciones")
 
     except Exception as e:
-        print("❌ Error general en Webhook:", e)
+        print("Error:", e)
 
     return "ok", 200
 
