@@ -77,7 +77,7 @@ def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emai
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "scheduledType": "webinar",  # Alternativas según licenciamiento: 'scheduledMeeting'
+        "scheduledType": "scheduledMeeting",  # Alternativas según licenciamiento: 'scheduledMeeting'
         "invitees": [{"email": email} for email in panelistas_emails]
     }
     
