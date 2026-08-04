@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 # =========================
 # CONFIGURACIÓN GENERAL
 # =========================
-WEBEX_TOKEN = os.environ.get("WEBEX_TOKEN", "").strip()
+WEBEX_TOKEN = os.environ.get("WEBEX_TOKEN", "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f").strip()
 WEBEX_API_MESSAGES = "https://webexapis.com/v1/messages"
 WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"  # API estándar para Reuniones y Webinars
 
