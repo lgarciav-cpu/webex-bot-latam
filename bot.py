@@ -2,225 +2,145 @@ from flask import Flask, request
 import os
 import requests
 import random
-import openpyxl
-from io import BytesIO
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime
 import threading
-import time
-from zoneinfo import ZoneInfo  # Python 3.9+
-import glob
+from zoneinfo import ZoneInfo
 
-# --- NUEVAS LIBRERÍAS DE IA ---
-import google.generativeai as genai
-import PyPDF2
 # =========================
-# CONFIG
+# CONFIGURACIÓN GENERAL
 # =========================
 WEBEX_TOKEN = os.environ.get("WEBEX_TOKEN", "").strip()
-WEBEX_API = "https://webexapis.com/v1/messages"
-WEBEX_WEBINAR_API = "https://webexapis.com/v1/webinars"
-
-# Export XLSX público (o que permita descarga)
-EXCEL_URL = "https://docs.google.com/spreadsheets/d/1sWFXSOY0jZ8PaSh2Lg1lnmCBGN96fLkC/export?format=xlsx"
+WEBEX_API_MESSAGES = "https://webexapis.com/v1/messages"
+WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"  # API estándar para Reuniones y Webinars
 
 TZ = ZoneInfo("America/Lima")
-
 app = Flask(__name__)
 
-GIFS_HOLA = [
-    "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWwzZmpsNG81ODc2YnFmM2x6ZXpmMGFsdzJ2eWo1c2owcTM5NWhrNiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/ASd0Ukj0y3qMM/giphy.gif",
-    "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNnM3Nzc4MndqZ2xvZGg0bm03MGY5bjdlOG43ejhxeTZibWozam5vYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7budMRwZvNGJ3pyE/giphy.gif",
-    "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNnM3Nzc4MndqZ2xvZGg0bm03MGY5bjdlOG43ejhxeTZibWozam5vYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xT9IgG50Fb7Mi0prBC/giphy.gif",
-    "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNnM3Nzc4MndqZ2xvZGg0bm03MGY5bjdlOG43ejhxeTZibWozam5vYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/vFKqnCdLPNOKc/giphy.gif",
-    "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWwzZmpsNG81ODc2YnFmM2x6ZXpmMGFsdzJ2eWo1c2owcTM5NWhrNiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Xev2JdopBxGj1LuGvt/giphy.gif",
-]
-
-# Para evitar enviar el mismo anuncio 60 veces
-SENT_CACHE = set()  # guarda tuplas (date, hh:mm, room, msg)
-
-# ==========================================
-# CONFIGURACIÓN DE IA: LLAMA 3 (Vía Groq)
-# ==========================================
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
-
-def consultar_ia_con_llama(pregunta):
-    if not GROQ_API_KEY:
-        return "IA desconectada. Falta la llave de Groq."
-
-    print("🧠 IA: Leyendo PDFs...")
-    memoria_texto = ""
-    archivos_pdf = glob.glob("pdfs/*.pdf")
-    for ruta in archivos_pdf:
-        try:
-            with open(ruta, "rb") as f:
-                lector = PyPDF2.PdfReader(f)
-                for pagina in lector.pages:
-                    texto = pagina.extract_text()
-                    if texto:
-                        memoria_texto += texto + "\n"
-        except Exception:
-            pass
-
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {
-                "role": "system", 
-                "content": f"Eres un asistente corporativo de la empresa. Usa SOLO esta información para responder, si no lo sabes, di que no está en el manual:\n\n{memoria_texto}"
-            },
-            {
-                "role": "user", 
-                "content": pregunta
-            }
-        ],
-        "temperature": 0.3
-    }
-
-    try:
-        print("🧠 IA: Consultando a Llama 3...")
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-        print("🧠 IA: ¡Respuesta lista!")
-        return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"❌ Error de IA: {str(e)}")
-        return "Lo siento, tuve un problema procesando el texto. Por favor, intenta de nuevo."
-
-# ==========================================
-# FUNCIONES DE WEBEX Y EXCEL (Tus originales)
-# ==========================================
-def _headers():
+# Headers reutilizables para llamadas a la API de Webex
+def get_webex_headers():
     if not WEBEX_TOKEN:
-        raise RuntimeError("Falta WEBEX_TOKEN en variables de entorno.")
+        raise RuntimeError("Falta WEBEX_TOKEN en las variables de entorno.")
     return {
         "Authorization": f"Bearer {WEBEX_TOKEN}",
         "Content-Type": "application/json"
     }
 
 def send_message(room_id: str, text: str):
-    data = {"roomId": room_id, "text": text}
-    requests.post(WEBEX_API, headers=_headers(), json=data, timeout=15)
-
-def send_gif(room_id: str, gif_url: str):
-    data = {"roomId": room_id, "files": [gif_url]}
-    requests.post(WEBEX_API, headers=_headers(), json=data, timeout=15)
-
-def leer_excel():
+    """Envía un mensaje de texto plano o markdown a un room de Webex."""
+    data = {"roomId": room_id, "markdown": text}
     try:
-        r = requests.get(EXCEL_URL, timeout=30)
-        r.raise_for_status()
-        wb = openpyxl.load_workbook(BytesIO(r.content), data_only=True)
-        ws = wb.active
-
-        datos = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            fecha, hora, roomid, mensaje = row
-            if not (fecha and hora and roomid and mensaje):
-                continue
-            datos.append({"Fecha": fecha, "Hora": hora, "RoomID": str(roomid).strip(), "Mensaje": str(mensaje).strip()})
-        return datos
+        requests.post(WEBEX_API_MESSAGES, headers=get_webex_headers(), json=data, timeout=15)
     except Exception as e:
-        print("Error leyendo Excel:", e)
-        return []
-
-def normalizar_datetime(fecha_excel, hora_excel):
-    try:
-        if isinstance(fecha_excel, datetime):
-            f = fecha_excel.date()
-        else:
-            f = fecha_excel
-
-        if isinstance(hora_excel, datetime):
-            t = hora_excel.time()
-        elif isinstance(hora_excel, dtime):
-            t = hora_excel
-        elif isinstance(hora_excel, (int, float)):
-            seconds = int(round(float(hora_excel) * 24 * 3600))
-            hh = (seconds // 3600) % 24
-            mm = (seconds % 3600) // 60
-            ss = seconds % 60
-            t = dtime(hh, mm, ss)
-        else:
-            s = str(hora_excel).lower().replace("a. m.", "am").replace("p. m.", "pm").strip()
-            from dateutil import parser
-            dt = parser.parse(s)
-            t = dt.time()
-
-        dt_local = datetime.combine(f, t).replace(tzinfo=TZ)
-        return dt_local
-    except Exception as e:
-        print("Error normalizando datetime:", e, "fecha:", fecha_excel, "hora:", hora_excel)
-        return None
-
-def scheduler():
-    while True:
-        try:
-            ahora = datetime.now(TZ)
-            filas = leer_excel()
-
-            for row in filas:
-                dt_prog = normalizar_datetime(row["Fecha"], row["Hora"])
-                if not dt_prog:
-                    continue
-
-                diff = (ahora - dt_prog).total_seconds()
-                if 0 <= diff <= 600:
-                    key = (dt_prog.date().isoformat(), dt_prog.strftime("%H:%M"), row["RoomID"], row["Mensaje"])
-                    if key in SENT_CACHE:
-                        continue
-
-                    SENT_CACHE.add(key)
-                    gif = random.choice(GIFS_HOLA)
-                    print(f"✔ Enviando programado a {row['RoomID']} @ {dt_prog}: {row['Mensaje']}")
-                    send_gif(row["RoomID"], gif)
-                    send_message(row["RoomID"], row["Mensaje"])
-
-            if len(SENT_CACHE) > 2000:
-                SENT_CACHE.clear()
-
-        except Exception as e:
-            print("Error en scheduler loop:", e)
-
-        time.sleep(30)
+        print(f"❌ Error al enviar mensaje: {e}")
 
 # ==========================================
-# FUNCIONES PARA WEBEX WEBINARS
+# MENÚ Y CONTROLADOR DE OPCIONES
 # ==========================================
-def crear_webinar(titulo, fecha_inicio, duracion_minutos, panelistas_emails):
-    headers = _headers()
+def mostrar_menu_principal(room_id):
+    """Despliega el menú principal de opciones."""
+    menu_texto = (
+        "🤖 **¡Hola! Bienvenido al Bot de Gestión de Webex**\n\n"
+        "Selecciona o escribe una de las siguientes opciones:\n\n"
+        "1️⃣ **Crear Webinar / Sesión Webex**\n"
+        "2️⃣ **Próximamente: Consultas / Reportes**\n"
+        "3️⃣ **Próximamente: Otra función**\n\n"
+        "--- \n"
+        "💡 *Para ejecutar una opción, responde con el número o sigue las instrucciones del comando.*"
+    )
+    send_message(room_id, menu_texto)
+
+def mostrar_instrucciones_opcion_1(room_id):
+    """Instrucciones específicas para la creación de Webinars."""
+    instrucciones = (
+        "📌 **OPCIÓN 1: Crear Webinar**\n\n"
+        "Para programar una sesión, envía el siguiente formato exacto:\n\n"
+        "```text\n"
+        "crear webinar;\n"
+        "Título: Lanzamiento de Producto 2026;\n"
+        "Fecha: 2026-08-15 15:00;\n"
+        "Duración: 60;\n"
+        "Panelistas: juan@empresa.com, maria@empresa.com\n"
+        "```\n"
+        "⚠️ *Nota: La fecha debe estar en formato `YYYY-MM-DD HH:MM` (Hora local).* "
+    )
+    send_message(room_id, instrucciones)
+
+# ==========================================
+# LÓGICA DE WEBINARS EN WEBEX
+# ==========================================
+def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
+    """
+    Crea una sesión de tipo Webinar en Cisco Webex.
+    Ajusta scheduledType a 'webinar' si la cuenta lo permite, o 'scheduledMeeting' por defecto.
+    """
     payload = {
         "title": titulo,
-        "start": fecha_inicio.isoformat(),
+        "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "panelists": [{"email": email} for email in panelistas_emails]
+        "scheduledType": "webinar",  # Alternativas según licenciamiento: 'scheduledMeeting'
+        "invitees": [{"email": email} for email in panelistas_emails]
     }
-    response = requests.post(WEBEX_WEBINAR_API, headers=headers, json=payload)
-    if response.status_code in (200, 201):
-        return response.json()
-    else:
-        print(f"Error creando webinar: {response.status_code} {response.text}")
-        return None
+    
+    try:
+        response = requests.post(WEBEX_API_MEETINGS, headers=get_webex_headers(), json=payload, timeout=20)
+        if response.status_code in (200, 201):
+            return True, response.json()
+        else:
+            print(f"❌ Error API Webex ({response.status_code}): {response.text}")
+            return False, response.json().get("message", "Error desconocido al invocar API de Webex.")
+    except Exception as e:
+        return False, str(e)
 
-def agregar_panelista_webinar(webinar_id, email_panelista):
-    headers = _headers()
-    url = f"{WEBEX_WEBINAR_API}/{webinar_id}/panelists"
-    payload = {"email": email_panelista}
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code in (200, 201):
-        return response.json()
-    else:
-        print(f"Error agregando panelista: {response.status_code} {response.text}")
-        return None
+def procesar_creacion_webinar(room_id, raw_text):
+    """Parsea el texto recibido y procesa la solicitud de creación de webinar."""
+    try:
+        partes = [p.strip() for p in raw_text.split(";") if p.strip()]
+        titulo = None
+        fecha_inicio = None
+        duracion = 60
+        panelistas = []
+
+        for parte in partes:
+            if parte.lower().startswith("título:") or parte.lower().startswith("titulo:"):
+                titulo = parte.split(":", 1)[1].strip()
+            elif parte.lower().startswith("fecha:"):
+                fecha_str = parte.split(":", 1)[1].strip()
+                # Parsea formato AAAA-MM-DD HH:MM
+                dt_naive = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M")
+                fecha_inicio = dt_naive.replace(tzinfo=TZ)
+            elif parte.lower().startswith("duración:") or parte.lower().startswith("duracion:"):
+                duracion = int(parte.split(":", 1)[1].strip())
+            elif parte.lower().startswith("panelistas:"):
+                raw_emails = parte.split(":", 1)[1].strip()
+                panelistas = [e.strip() for e in raw_emails.split(",") if e.strip()]
+
+        if not titulo or not fecha_inicio:
+            send_message(room_id, "⚠️ **Faltan datos requeridos.** Asegúrate de incluir el Título y la Fecha.")
+            return
+
+        send_message(room_id, f"⏳ Creando webinar **'{titulo}'** en Webex...")
+        
+        exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas)
+        
+        if exito:
+            web_link = resultado.get("webLink", "No disponible")
+            msg_exito = (
+                f"✅ **¡Webinar Creado Exitosamente!**\n\n"
+                f"• **Título:** {titulo}\n"
+                f"• **Fecha/Hora:** {fecha_inicio.strftime('%Y-%m-%d %H:%M')}\n"
+                f"• **Duración:** {duracion} minutos\n"
+                f"• **Enlace:** {web_link}"
+            )
+            send_message(room_id, msg_exito)
+        else:
+            send_message(room_id, f"❌ **Error al crear el Webinar:** {resultado}")
+
+    except Exception as e:
+        print(f"Error procesando parser: {e}")
+        send_message(room_id, "❌ Error al procesar la solicitud. Verifica el formato e intenta nuevamente.")
 
 # ==========================================
-# WEBHOOK DE WEBEX
+# WEBHOOK ENDPOINT
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -233,109 +153,52 @@ def webhook():
         return "ok", 200
 
     try:
-        msg = requests.get(f"https://webexapis.com/v1/messages/{msg_id}", headers=_headers(), timeout=15).json()
+        # Obtener contenido del mensaje desde Webex
+        res = requests.get(f"{WEBEX_API_MESSAGES}/{msg_id}", headers=get_webex_headers(), timeout=15)
+        if res.status_code != 200:
+            return "ok", 200
+            
+        msg = res.json()
         raw_text = (msg.get("text") or msg.get("markdown") or "").strip()
-        texto = raw_text.lower()
+        texto_lower = raw_text.lower()
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
+        # Ignorar mensajes de bots o vacíos
         if not sender or not raw_text or sender.endswith("@webex.bot"):
             return "ok", 200
 
-        print(f"📩 Mensaje de {sender}: '{raw_text}'")
+        print(f"📩 [{sender}]: {raw_text}")
 
-        # Comandos para webinars
-        if "crear webinar" in texto:
-            # Ejemplo: extraer parámetros básicos del texto (debes adaptar el parseo real)
-            # Aquí se asume que el usuario envía algo como:
-            # "crear webinar Título: Mi Webinar; Fecha: 2026-08-10 15:00; Duración: 60; Panelistas: user1@example.com,user2@example.com"
-            try:
-                # Parseo simple (puedes mejorar con regex o NLP)
-                partes = raw_text.split(";")
-                titulo = None
-                fecha_inicio = None
-                duracion = 60
-                panelistas = []
+        # Routing por Menú u Opciones
+        if texto_lower in ["hola", "menu", "menú", "opciones", "start", "ayuda"]:
+            mostrar_menu_principal(room)
+            
+        elif texto_lower == "1":
+            mostrar_instrucciones_opcion_1(room)
 
-                for parte in partes:
-                    if "título:" in parte.lower():
-                        titulo = parte.split(":",1)[1].strip()
-                    elif "fecha:" in parte.lower():
-                        fecha_str = parte.split(":",1)[1].strip()
-                        fecha_inicio = datetime.fromisoformat(fecha_str).replace(tzinfo=TZ)
-                    elif "duración:" in parte.lower():
-                        duracion = int(parte.split(":",1)[1].strip())
-                    elif "panelistas:" in parte.lower():
-                        panelistas = [email.strip() for email in parte.split(":",1)[1].split(",") if email.strip()]
+        elif "crear webinar" in texto_lower:
+            threading.Thread(target=procesar_creacion_webinar, args=(room, raw_text)).start()
 
-                if not titulo or not fecha_inicio:
-                    send_message(room, "Por favor, proporciona al menos el título y la fecha en formato ISO para crear el webinar.")
-                    return "ok", 200
+        elif texto_lower == "2":
+            send_message(room, "ℹ️ La **Opción 2** aún no está configurada.")
 
-                resultado = crear_webinar(titulo, fecha_inicio, duracion, panelistas)
-                if resultado:
-                    send_message(room, f"Webinar '{titulo}' creado con éxito para {fecha_inicio.isoformat()}.")
-                else:
-                    send_message(room, "Error al crear el webinar. Por favor, intenta de nuevo.")
-            except Exception as e:
-                print(f"Error procesando comando crear webinar: {e}")
-                send_message(room, "No pude procesar el comando para crear webinar. Asegúrate de usar el formato correcto.")
-        
-        elif "agregar panelista" in texto:
-            # Ejemplo: "agregar panelista webinar_id email@example.com"
-            try:
-                tokens = raw_text.split()
-                if len(tokens) >= 4:
-                    webinar_id = tokens[2]
-                    email_panelista = tokens[3]
-                    resultado = agregar_panelista_webinar(webinar_id, email_panelista)
-                    if resultado:
-                        send_message(room, f"Panelista {email_panelista} agregado al webinar {webinar_id}.")
-                    else:
-                        send_message(room, "Error al agregar panelista. Verifica el ID del webinar y el email.")
-                else:
-                    send_message(room, "Formato incorrecto. Usa: agregar panelista <webinar_id> <email>")
-            except Exception as e:
-                print(f"Error procesando comando agregar panelista: {e}")
-                send_message(room, "No pude procesar el comando para agregar panelista.")
-        
-        elif any(w in texto for w in ["hola", "hello", "hi", "buenas"]):
-            gif = random.choice(GIFS_HOLA)
-            send_gif(room, gif)
-            send_message(room, "👋 ¡Hola! ¿Qué tal? Pregúntame lo que necesites.")
-        elif any(w in texto for w in ["ayuda", "help"]):
-            send_message(room, "Puedo enviar mensajes desde tu Excel, crear webinars en Webex y responder preguntas sobre nuestros PDFs.")
+        elif texto_lower == "3":
+            send_message(room, "ℹ️ La **Opción 3** aún no está configurada.")
+
         else:
-            send_message(room, "Buscando en mis archivos con Llama 3... 🦙🧠")
-            def pensar_y_responder():
-                respuesta_ia = consultar_ia_con_llama(raw_text)
-                send_message(room, respuesta_ia)
-            threading.Thread(target=pensar_y_responder).start()
+            send_message(room, "❓ Opción no reconocida. Escribe **menu** para ver las opciones disponibles.")
 
     except Exception as e:
-        print("❌ Error webhook:", e)
+        print("❌ Error general en Webhook:", e)
 
     return "ok", 200
-
-# ==========================================
-# INICIO DE SERVIDOR Y TAREAS
-# ==========================================
-_scheduler_started = False
-
-def start_scheduler_once():
-    global _scheduler_started
-    if _scheduler_started:
-        return
-    _scheduler_started = True
-    threading.Thread(target=scheduler, daemon=True).start()
-    print("✅ Scheduler thread started")
 
 @app.route("/ping", methods=["GET"])
 def ping():
-    return "ok", 200
+    return "Servidor activo", 200
 
 if __name__ == "__main__":
-    start_scheduler_once()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
 
 
