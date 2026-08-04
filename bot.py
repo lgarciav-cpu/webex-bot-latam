@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 # =========================
 # CONFIGURACIÓN GENERAL
 # =========================
-WEBEX_TOKEN = os.environ.get("WEBEX_TOKEN", "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f").strip()
+WEBEX_TOKEN = "ZGU1MTQ0NGItYTYwNC00ZTBkLWI5NzgtZTIwMDJkMmQ0MDFlMTkzNDBkOTgtMmQ2_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"
 WEBEX_API_MESSAGES = "https://webexapis.com/v1/messages"
 WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"  # API estándar para Reuniones y Webinars
 
@@ -68,16 +68,16 @@ def mostrar_instrucciones_opcion_1(room_id):
 # ==========================================
 # LÓGICA DE WEBINARS EN WEBEX
 # ==========================================
-def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
+def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails, host_email):
     """
-    Crea una sesión de tipo Webinar en Cisco Webex.
-    Ajusta scheduledType a 'webinar' si la cuenta lo permite, o 'scheduledMeeting' por defecto.
+    Crea una sesión asignando como anfitrión (Host) al usuario que la solicitó.
     """
     payload = {
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "scheduledType": "scheduledMeeting",  # Alternativas según licenciamiento: 'scheduledMeeting'
+        "scheduledType": "webinar",  # Si tu cuenta no tiene módulo de webinar, cambia a 'scheduledMeeting'
+        "hostEmail": host_email,     # 👈 AQUÍ se asigna la cuenta de Diego o quien lo pida
         "invitees": [{"email": email} for email in panelistas_emails]
     }
     
@@ -87,12 +87,12 @@ def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emai
             return True, response.json()
         else:
             print(f"❌ Error API Webex ({response.status_code}): {response.text}")
-            return False, response.json().get("message", "Error desconocido al invocar API de Webex.")
+            return False, response.json().get("message", "Error al invocar API de Webex.")
     except Exception as e:
         return False, str(e)
 
-def procesar_creacion_webinar(room_id, raw_text):
-    """Parsea el texto recibido y procesa la solicitud de creación de webinar."""
+def procesar_creacion_webinar(room_id, raw_text, sender_email):
+    """Parsea el texto y crea el webinar con sender_email como Host."""
     try:
         partes = [p.strip() for p in raw_text.split(";") if p.strip()]
         titulo = None
@@ -105,7 +105,6 @@ def procesar_creacion_webinar(room_id, raw_text):
                 titulo = parte.split(":", 1)[1].strip()
             elif parte.lower().startswith("fecha:"):
                 fecha_str = parte.split(":", 1)[1].strip()
-                # Parsea formato AAAA-MM-DD HH:MM
                 dt_naive = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M")
                 fecha_inicio = dt_naive.replace(tzinfo=TZ)
             elif parte.lower().startswith("duración:") or parte.lower().startswith("duracion:"):
@@ -115,30 +114,31 @@ def procesar_creacion_webinar(room_id, raw_text):
                 panelistas = [e.strip() for e in raw_emails.split(",") if e.strip()]
 
         if not titulo or not fecha_inicio:
-            send_message(room_id, "⚠️ **Faltan datos requeridos.** Asegúrate de incluir el Título y la Fecha.")
+            send_message(room_id, "⚠️ **Faltan datos requeridos.** Incluye Título y Fecha.")
             return
 
-        send_message(room_id, f"⏳ Creando webinar **'{titulo}'** en Webex...")
+        send_message(room_id, f"⏳ Creando sesión **'{titulo}'** a nombre de **{sender_email}**...")
         
-        exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas)
+        # Le pasamos sender_email como anfitrión
+        exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas, sender_email)
         
         if exito:
             web_link = resultado.get("webLink", "No disponible")
             msg_exito = (
-                f"✅ **¡Webinar Creado Exitosamente!**\n\n"
-                f"• **Título:** {titulo}\n"
-                f"• **Fecha/Hora:** {fecha_inicio.strftime('%Y-%m-%d %H:%M')}\n"
-                f"• **Duración:** {duracion} minutos\n"
-                f"• **Enlace:** {web_link}"
+                f"✅ **¡Sesión Creada Exitosamente!**\n\n"
+                f"👤 **Anfitrión:** {sender_email}\n"
+                f"📌 **Título:** {titulo}\n"
+                f"📅 **Fecha/Hora:** {fecha_inicio.strftime('%Y-%m-%d %H:%M')}\n"
+                f"⏱️ **Duración:** {duracion} min\n"
+                f"🔗 **Enlace:** {web_link}"
             )
             send_message(room_id, msg_exito)
         else:
-            send_message(room_id, f"❌ **Error al crear el Webinar:** {resultado}")
+            send_message(room_id, f"❌ **Error al crear:** {resultado}")
 
     except Exception as e:
         print(f"Error procesando parser: {e}")
-        send_message(room_id, "❌ Error al procesar la solicitud. Verifica el formato e intenta nuevamente.")
-
+        send_message(room_id, "❌ Error procesando el texto. Revisa el formato.")
 # ==========================================
 # WEBHOOK ENDPOINT
 # ==========================================
@@ -195,11 +195,18 @@ def webhook():
     return "ok", 200
 
 @app.route("/ping", methods=["GET"])
+
 def ping():
     return "Servidor activo", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+elif "crear webinar" in texto_lower:
+    # Le pasamos sender a la función para que sepa quién es el Host
+    threading.Thread(
+        target=procesar_creacion_webinar, 
+        args=(room, raw_text, sender)
+    ).start()
 
 
 
