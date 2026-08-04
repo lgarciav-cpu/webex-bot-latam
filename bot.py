@@ -112,6 +112,35 @@ def procesar_creacion_webinar(room_id, raw_text):
         send_message(room_id, "❌ Error al procesar el texto. Verifica el formato.")
 
 # ==========================================
+# FUNCIONES DE MENÚ E INSTRUCCIONES
+# ==========================================
+def mostrar_menu_principal(room_id):
+    menu_texto = (
+        "🤖 **¡Hola! Bienvenido al Bot de Gestión de Webex**\n\n"
+        "Selecciona una de las siguientes opciones:\n\n"
+        "1️⃣ **Crear Webinar / Sesión Webex**\n"
+        "2️⃣ **Próximamente: Consultas**\n"
+        "3️⃣ **Próximamente: Reportes**\n\n"
+        "💡 *Escribe **1** o el comando para crear la sesión.*"
+    )
+    send_message(room_id, menu_texto)
+
+
+def mostrar_instrucciones_opcion_1(room_id):
+    instrucciones = (
+        "📌 **OPCIÓN 1: Crear Webinar / Sesión**\n\n"
+        "Envía la información con este formato exacto:\n\n"
+        "```text\n"
+        "crear webinar;\n"
+        "Título: Lanzamiento de Producto 2026;\n"
+        "Fecha: 2026-08-15 15:00;\n"
+        "Duración: 60;\n"
+        "Panelistas: juan@empresa.com, maria@empresa.com\n"
+        "```"
+    )
+    send_message(room_id, instrucciones)
+
+# ==========================================
 # WEBHOOK ENDPOINT
 # ==========================================
 @app.route("/webhook", methods=["POST"])
