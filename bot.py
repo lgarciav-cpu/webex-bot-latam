@@ -2,7 +2,7 @@ from flask import Flask, request
 import os
 import requests
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 # =========================
@@ -135,7 +135,7 @@ def procesar_creacion_webinar(room_id, raw_text):
 # FUNCIONES DE MENÚ E INSTRUCCIONES
 # ==========================================
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify
 
 # ==========================================
