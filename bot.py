@@ -26,6 +26,9 @@ def get_bot_headers():
         "Content-Type": "application/json"
     }
 
+# 👈 AGREGA ESTA LÍNEA PARA EVITAR EL ERROR:
+get_webex_headers = get_bot_headers
+
 def get_user_headers():
     """Headers con tu TOKEN PERSONAL para agendar reuniones."""
     token = WEBEX_USER_TOKEN if WEBEX_USER_TOKEN else WEBEX_TOKEN
