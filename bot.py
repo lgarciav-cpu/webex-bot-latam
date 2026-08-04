@@ -1,22 +1,20 @@
 from flask import Flask, request
 import os
 import requests
-import random
-from datetime import datetime
 import threading
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # =========================
 # CONFIGURACIÓN GENERAL
 # =========================
-WEBEX_TOKEN = "ZGU1MTQ0NGItYTYwNC00ZTBkLWI5NzgtZTIwMDJkMmQ0MDFlMTkzNDBkOTgtMmQ2_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"
+WEBEX_TOKEN = "ZmY2MGJlYWYtMzgxYy00ZDljLWIyMmYtMTZkYjRlMTc2N2EzNTYxYjk5ZjgtN2Iw_PF84_1eb65fdf-9643-417f-9974-ad72cae0e10f"
 WEBEX_API_MESSAGES = "https://webexapis.com/v1/messages"
-WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"  # API estándar para Reuniones y Webinars
+WEBEX_API_MEETINGS = "https://webexapis.com/v1/meetings"
 
 TZ = ZoneInfo("America/Lima")
 app = Flask(__name__)
 
-# Headers reutilizables para llamadas a la API de Webex
 def get_webex_headers():
     if not WEBEX_TOKEN:
         raise RuntimeError("Falta WEBEX_TOKEN en las variables de entorno.")
@@ -26,73 +24,56 @@ def get_webex_headers():
     }
 
 def send_message(room_id: str, text: str):
-    """Envía un mensaje de texto plano o markdown a un room de Webex."""
+    """Envía un mensaje de texto plano o markdown a Webex."""
     data = {"roomId": room_id, "markdown": text}
     try:
         requests.post(WEBEX_API_MESSAGES, headers=get_webex_headers(), json=data, timeout=15)
     except Exception as e:
         print(f"❌ Error al enviar mensaje: {e}")
 
-# ==========================================
-# MENÚ Y CONTROLADOR DE OPCIONES
-# ==========================================
 def mostrar_menu_principal(room_id):
-    """Despliega el menú principal de opciones."""
     menu_texto = (
         "🤖 **¡Hola! Bienvenido al Bot de Gestión de Webex**\n\n"
-        "Selecciona o escribe una de las siguientes opciones:\n\n"
+        "Selecciona una de las siguientes opciones:\n\n"
         "1️⃣ **Crear Webinar / Sesión Webex**\n"
-        "2️⃣ **Próximamente: Consultas / Reportes**\n"
-        "3️⃣ **Próximamente: Otra función**\n\n"
-        "--- \n"
-        "💡 *Para ejecutar una opción, responde con el número o sigue las instrucciones del comando.*"
+        "2️⃣ **Próximamente: Consultas**\n"
+        "3️⃣ **Próximamente: Reportes**\n\n"
+        "💡 *Escribe 1 o el comando para crear la sesión.*"
     )
     send_message(room_id, menu_texto)
 
 def mostrar_instrucciones_opcion_1(room_id):
-    """Instrucciones específicas para la creación de Webinars."""
     instrucciones = (
-        "📌 **OPCIÓN 1: Crear Webinar**\n\n"
-        "Para programar una sesión, envía el siguiente formato exacto:\n\n"
+        "📌 **OPCIÓN 1: Crear Webinar / Sesión**\n\n"
+        "Envía la información con este formato exacto:\n\n"
         "```text\n"
         "crear webinar;\n"
         "Título: Lanzamiento de Producto 2026;\n"
         "Fecha: 2026-08-15 15:00;\n"
         "Duración: 60;\n"
         "Panelistas: juan@empresa.com, maria@empresa.com\n"
-        "```\n"
-        "⚠️ *Nota: La fecha debe estar en formato `YYYY-MM-DD HH:MM` (Hora local).* "
+        "```"
     )
     send_message(room_id, instrucciones)
 
-# ==========================================
-# LÓGICA DE WEBINARS EN WEBEX
-# ==========================================
 def crear_webinar_api(titulo, fecha_inicio_dt, duracion_minutos, panelistas_emails):
-    """
-    Al usar tu Personal Access Token, la sesión se crea automáticamente 
-    a tu nombre, por lo que NO incluimos 'hostEmail'.
-    """
     payload = {
         "title": titulo,
         "start": fecha_inicio_dt.isoformat(),
         "durationMinutes": duracion_minutos,
-        "scheduledType": "scheduledMeeting",  # Cambia a 'webinar' si tienes la licencia habilitada
+        "scheduledType": "scheduledMeeting",
         "invitees": [{"email": email} for email in panelistas_emails if email]
     }
-    
     try:
         response = requests.post(WEBEX_API_MEETINGS, headers=get_webex_headers(), json=payload, timeout=20)
         if response.status_code in (200, 201):
             return True, response.json()
         else:
-            print(f"❌ Error API Webex ({response.status_code}): {response.text}")
-            return False, response.json().get("message", "Error al invocar API de Webex.")
+            return False, response.json().get("message", f"Error HTTP {response.status_code}")
     except Exception as e:
         return False, str(e)
 
-
-def procesar_creacion_webinar(room_id, raw_text, sender_email):
+def procesar_creacion_webinar(room_id, raw_text):
     try:
         partes = [p.strip() for p in raw_text.split(";") if p.strip()]
         titulo = None
@@ -101,15 +82,16 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
         panelistas = []
 
         for parte in partes:
-            if parte.lower().startswith("título:") or parte.lower().startswith("titulo:"):
+            p_lower = parte.lower()
+            if p_lower.startswith("título:") or p_lower.startswith("titulo:"):
                 titulo = parte.split(":", 1)[1].strip()
-            elif parte.lower().startswith("fecha:"):
+            elif p_lower.startswith("fecha:"):
                 fecha_str = parte.split(":", 1)[1].strip()
                 dt_naive = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M")
                 fecha_inicio = dt_naive.replace(tzinfo=TZ)
-            elif parte.lower().startswith("duración:") or parte.lower().startswith("duracion:"):
+            elif p_lower.startswith("duración:") or p_lower.startswith("duracion:"):
                 duracion = int(parte.split(":", 1)[1].strip())
-            elif parte.lower().startswith("panelistas:"):
+            elif p_lower.startswith("panelistas:"):
                 raw_emails = parte.split(":", 1)[1].strip()
                 panelistas = [e.strip() for e in raw_emails.split(",") if e.strip()]
 
@@ -118,9 +100,8 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
             return
 
         send_message(room_id, f"⏳ Creando sesión **'{titulo}'**...")
-        
         exito, resultado = crear_webinar_api(titulo, fecha_inicio, duracion, panelistas)
-        
+
         if exito:
             web_link = resultado.get("webLink", "No disponible")
             msg_exito = (
@@ -136,11 +117,10 @@ def procesar_creacion_webinar(room_id, raw_text, sender_email):
 
     except Exception as e:
         print(f"Error procesando parser: {e}")
-        send_message(room_id, "❌ Error procesando el texto. Revisa el formato.")
-
+        send_message(room_id, "❌ Error al procesar el texto. Verifica el formato.")
 
 # ==========================================
-# WEBHOOK CONTROLADOR (FILTRO ANTI-BUCLE)
+# WEBHOOK ENDPOINT
 # ==========================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -163,31 +143,18 @@ def webhook():
         room = msg.get("roomId")
         sender = msg.get("personEmail", "")
 
-        # 🛑 FILTRO ANTI-BUCLE: Ignorar si el mensaje viene del bot o es una respuesta automática del sistema
+        # Evitar responder a sí mismo o a bots
         if not sender or not raw_text or sender.endswith("@webex.bot"):
-            return "ok", 200
-            
-        if any(raw_text.startswith(pref) for pref in ["Escribe 'menu'", "⏳ Creando", "❌ Error", "✅ ¡Sesión"]):
             return "ok", 200
 
         print(f"📩 [{sender}]: {raw_text}")
 
         if texto_lower in ["hola", "menu", "menú", "opciones", "start", "ayuda"]:
             mostrar_menu_principal(room)
-            
         elif texto_lower == "1":
             mostrar_instrucciones_opcion_1(room)
-
         elif "crear webinar" in texto_lower:
-            threading.Thread(
-                target=procesar_creacion_webinar, 
-                args=(room, raw_text, sender)
-            ).start()
-
-        elif texto_lower == "2":
-            send_message(room, "ℹ️ Opción 2 aún no disponible.")
-
-        # Si el usuario escribe algo no reconocido, enviamos el menú sin peligro de bucle
+            threading.Thread(target=procesar_creacion_webinar, args=(room, raw_text)).start()
         else:
             send_message(room, "❓ Comando no reconocido. Escribe **menu** para ver las opciones.")
 
@@ -195,6 +162,13 @@ def webhook():
         print("❌ Error general en Webhook:", e)
 
     return "ok", 200
+
+@app.route("/ping", methods=["GET", "HEAD"])
+def ping():
+    return "Servidor activo", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
 
 
 
